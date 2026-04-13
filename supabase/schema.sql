@@ -446,3 +446,16 @@ begin
     ', t);
   end loop;
 end $$;
+
+-- ============================================================
+-- INVITES
+-- Magic links for access-gated entry
+-- ============================================================
+create table invites (
+  id uuid primary key default uuid_generate_v4(),
+  token text unique not null,
+  name text not null,
+  user_id uuid references users(id) on delete set null,
+  used_at timestamptz,
+  created_at timestamptz default now()
+);

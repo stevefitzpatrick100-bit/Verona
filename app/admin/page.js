@@ -9,6 +9,9 @@ export default function Admin() {
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [password, setPassword] = useState("");
   const [authed, setAuthed] = useState(false);
+  const [invites, setInvites] = useState([]);
+  const [newInviteName, setNewInviteName] = useState("");
+  const [showInvites, setShowInvites] = useState(false);
 
   useEffect(() => {
     const saved = sessionStorage.getItem("admin-pw");
@@ -31,6 +34,40 @@ export default function Admin() {
   }, []);
 
   useEffect(() => { if (authed) fetchData(); }, [authed, fetchData]);
+
+  const fetchInvites = useCallback(async () => {
+    const pw = sessionStorage.getItem("admin-pw");
+    if (!pw) return;
+    try {
+      const res = await fetch("/api/invite", { headers: { authorization: pw } });
+      const json = await res.json();
+      if (json.invites) setInvites(json.invites);
+    } catch (e) { console.error("Invite fetch failed:", e); }
+  }, []);
+
+  useEffect(() => { if (authed) fetchInvites(); }, [authed, fetchInvites]);
+
+  async function createInvite() {
+    if (!newInviteName.trim()) return;
+    const pw = sessionStorage.getItem("admin-pw");
+    await fetch("/api/invite", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", authorization: pw },
+      body: JSON.stringify({ name: newInviteName.trim() }),
+    });
+    setNewInviteName("");
+    fetchInvites();
+  }
+
+  async function deleteInvite(id) {
+    const pw = sessionStorage.getItem("admin-pw");
+    await fetch("/api/invite", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json", authorization: pw },
+      body: JSON.stringify({ id }),
+    });
+    fetchInvites();
+  }
 
   useEffect(() => {
     if (!autoRefresh || !authed) return;
@@ -94,6 +131,7 @@ export default function Admin() {
             {autoRefresh ? "● Live" : "○ Paused"}
           </button>
           <button onClick={fetchData} style={S.btn}>Refresh</button>
+          <button onClick={() => setShowInvites(!showInvites)} style={{ ...S.btn, background: showInvites ? "#C4A08A" : "#E8E4DF" }}>Invites</button>
           <a href="/" style={{ ...S.btn, textDecoration: "none" }}>← App</a>
         </div>
       </div>
@@ -107,6 +145,40 @@ export default function Admin() {
         <Stat label="Fragments" value={data.fragments.length} />
         <Stat label="Hypotheses" value={data.hypotheses.length} />
       </div>
+
+      {/* Invites panel */}
+      {showInvites && (
+        <div style={S.invitePanel}>
+          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+            <input
+              value={newInviteName}
+              onChange={(e) => setNewInviteName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && createInvite()}
+              placeholder="Name (e.g. Tracey)"
+              style={S.input}
+            />
+            <button onClick={createInvite} style={S.btn}>Create Invite</button>
+          </div>
+          {invites.length === 0 && <div style={S.empty}>No invites yet</div>}
+          {invites.map((inv) => (
+            <div key={inv.id} style={S.inviteRow}>
+              <div style={{ flex: 1 }}>
+                <span style={{ fontWeight: 500 }}>{inv.name}</span>
+                <span style={{ color: "#888", fontSize: 11, marginLeft: 8 }}>
+                  {inv.used_at ? `Used ${timeAgo(inv.used_at)}` : "Not used"}
+                </span>
+              </div>
+              <input
+                readOnly
+                value={`${typeof window !== "undefined" ? window.location.origin : ""}/?invite=${inv.token}`}
+                style={{ ...S.input, flex: 2, fontSize: 11, cursor: "text" }}
+                onClick={(e) => { e.target.select(); navigator.clipboard.writeText(e.target.value); }}
+              />
+              <button onClick={() => deleteInvite(inv.id)} style={{ ...S.btn, background: "#433", color: "#e74c3c", fontSize: 11 }}>×</button>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div style={S.columns}>
         {/* Left: Users & Sessions */}
@@ -343,4 +415,6 @@ const S = {
   hStatus: { display: "inline-block", background: "#333", color: "#C4A08A", borderRadius: 4, padding: "1px 6px", fontSize: 10, marginRight: 6 },
   loginBox: { width: 300, margin: "120px auto", textAlign: "center" },
   input: { width: "100%", padding: "10px 14px", borderRadius: 8, border: "1px solid #444", background: "#222", color: "#e0ddd8", fontSize: 14, outline: "none", boxSizing: "border-box" },
+  invitePanel: { padding: "16px 24px", borderBottom: "1px solid #333", background: "#1e1e1e" },
+  inviteRow: { display: "flex", alignItems: "center", gap: 8, marginBottom: 6, padding: "6px 0" },
 };

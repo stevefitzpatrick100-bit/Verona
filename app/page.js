@@ -9,17 +9,57 @@ export default function Home() {
   const [sessionId, setSessionId] = useState(null);
   const [portrait, setPortrait] = useState(null);
   const [showPortrait, setShowPortrait] = useState(false);
+  const [accessDenied, setAccessDenied] = useState(false);
+  const [checking, setChecking] = useState(true);
   const endRef = useRef(null);
   const inputRef = useRef(null);
 
-  // Create or retrieve user on mount
+  // Validate invite token on mount
   useEffect(() => {
-    let stored = localStorage.getItem("verona-user-id");
-    if (!stored) {
-      stored = crypto.randomUUID();
-      localStorage.setItem("verona-user-id", stored);
+    async function checkAccess() {
+      const params = new URLSearchParams(window.location.search);
+      const token = params.get("invite");
+
+      // If token in URL, validate it
+      if (token) {
+        try {
+          const res = await fetch("/api/invite/validate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token }),
+          });
+          const data = await res.json();
+          if (data.userId) {
+            localStorage.setItem("verona-user-id", data.userId);
+            localStorage.setItem("verona-invite", token);
+            setUserId(data.userId);
+            // Clean the URL
+            window.history.replaceState({}, "", "/");
+            setChecking(false);
+            return;
+          }
+        } catch (e) {
+          console.error("Invite validation failed:", e);
+        }
+        setAccessDenied(true);
+        setChecking(false);
+        return;
+      }
+
+      // No token in URL — check localStorage for existing valid session
+      const stored = localStorage.getItem("verona-user-id");
+      const storedInvite = localStorage.getItem("verona-invite");
+      if (stored && storedInvite) {
+        setUserId(stored);
+        setChecking(false);
+        return;
+      }
+
+      // No valid access
+      setAccessDenied(true);
+      setChecking(false);
     }
-    setUserId(stored);
+    checkAccess();
   }, []);
 
   // Start a session when user is ready
@@ -111,6 +151,31 @@ export default function Home() {
   }
 
   const empty = messages.length === 0;
+
+  if (checking) {
+    return (
+      <div style={S.wrap}>
+        <div style={S.splash}>
+          <div style={S.logo}>Verona</div>
+          <div style={S.tag}>Find love worth dying for.</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (accessDenied) {
+    return (
+      <div style={S.wrap}>
+        <div style={S.splash}>
+          <div style={S.logo}>Verona</div>
+          <div style={S.tag}>Find love worth dying for.</div>
+          <div style={{ marginTop: 32, fontSize: 15, color: "#9B9590", maxWidth: 360, lineHeight: 1.6 }}>
+            Angelica is available by invitation only. If someone shared a link with you, make sure you&apos;re using the full URL they sent.
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={S.wrap}>
