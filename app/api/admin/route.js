@@ -1,0 +1,54 @@
+import { getSupabaseServer } from "@/lib/supabase";
+
+export async function GET(req) {
+  const auth = req.headers.get("authorization");
+  if (auth !== process.env.ADMIN_PASSWORD) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const supabase = getSupabaseServer();
+
+  try {
+    const [
+      { data: users },
+      { data: sessions },
+      { data: messages },
+      { data: scores },
+      { data: fragments },
+      { data: hypotheses },
+      { data: dims },
+      { data: keyMoments },
+      { data: silences },
+      { data: territory },
+      { data: essentialTruth },
+    ] = await Promise.all([
+      supabase.from("users").select("*").order("created_at", { ascending: false }),
+      supabase.from("sessions").select("*").order("started_at", { ascending: false }),
+      supabase.from("messages").select("*").order("created_at", { ascending: false }).limit(200),
+      supabase.from("scores").select("*").order("measured_at", { ascending: false }),
+      supabase.from("fragments").select("*").order("created_at", { ascending: false }),
+      supabase.from("hypotheses").select("*").order("created_at", { ascending: false }),
+      supabase.from("portrait_dimensions").select("*").neq("resolution", "unvisited").order("weight", { ascending: false }),
+      supabase.from("key_moments").select("*").order("created_at", { ascending: false }),
+      supabase.from("silences").select("*"),
+      supabase.from("territory_map").select("*").gt("depth", 0),
+      supabase.from("essential_truth").select("*"),
+    ]);
+
+    return Response.json({
+      users: users || [],
+      sessions: sessions || [],
+      messages: messages || [],
+      scores: scores || [],
+      fragments: fragments || [],
+      hypotheses: hypotheses || [],
+      dimensions: dims || [],
+      keyMoments: keyMoments || [],
+      silences: silences || [],
+      territory: territory || [],
+      essentialTruth: essentialTruth || [],
+    });
+  } catch (e) {
+    return Response.json({ error: e.message }, { status: 500 });
+  }
+}

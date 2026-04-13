@@ -21,7 +21,7 @@ export async function POST(req) {
       .from("sessions")
       .select("*", { count: "exact", head: true })
       .eq("user_id", userId);
-    const sessionNumber = (count || 0) + 1;
+    const sessionNumber = count || 1;
 
     // Build full system prompt with portrait context
     const systemPrompt = ANGELICA_SYSTEM_PROMPT + "\n\n## Portrait & Memory\n\n" + portraitContext;
