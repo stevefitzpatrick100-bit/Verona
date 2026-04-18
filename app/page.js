@@ -426,7 +426,7 @@ export default function Home() {
 }
 
 const S = {
-  wrap: { display: "flex", flexDirection: "column", height: "100%", background: "#FAF8F5", fontFamily: "'DM Sans',sans-serif", color: "#2C2825" },
+  wrap: { display: "flex", flexDirection: "column", height: "100%", background: "#FAF0EE", fontFamily: "'DM Sans',sans-serif", color: "#2C2825" },
   head: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px", borderBottom: "1px solid #E8E4DF" },
   avatar: { width: 38, height: 38, borderRadius: "50%", background: "#C4A08A", color: "#FAF8F5", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Cormorant Garamond',serif", fontSize: 20, fontWeight: 500, flexShrink: 0 },
   name: { fontFamily: "'Cormorant Garamond',serif", fontSize: 20, fontWeight: 500, letterSpacing: "0.02em" },
