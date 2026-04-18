@@ -102,6 +102,22 @@ export default function Admin() {
     fetchData();
   }
 
+  async function deleteUser(userId) {
+    const pw = sessionStorage.getItem("admin-pw");
+    const res = await fetch("/api/admin", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json", authorization: pw },
+      body: JSON.stringify({ userId }),
+    });
+    if (!res.ok) {
+      const json = await res.json();
+      throw new Error(json.error || "Delete failed");
+    }
+    setSelectedUserId(null);
+    setSelectedSessionId(null);
+    fetchData();
+  }
+
   if (!authed) {
     return (
       <div style={S.page}>
@@ -125,6 +141,15 @@ export default function Admin() {
 
   return (
     <div style={S.page}>
+      <style>{`
+        #app-shell { max-width: 100% !important; box-shadow: none !important; }
+        .va-grid { display: grid; grid-template-columns: 1fr 300px; gap: 24px; margin-top: 20px; }
+        .va-grid-wide { display: grid; grid-template-columns: 1fr 340px; gap: 24px; margin-top: 20px; }
+        .va-table-scroll { overflow-x: auto; }
+        @media (max-width: 760px) {
+          .va-grid, .va-grid-wide { grid-template-columns: 1fr; }
+        }
+      `}</style>
       <div style={S.topBar}>
         <div style={S.title}>Mission Control</div>
         <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
@@ -162,7 +187,7 @@ export default function Admin() {
 
           {!selectedUserId && <Adoption data={data} onSelectUser={(id) => setSelectedUserId(id)} />}
           {selectedUserId && !selectedSessionId && (
-            <UserJourney data={data} userId={selectedUserId} onSelectSession={(id) => setSelectedSessionId(id)} />
+            <UserJourney data={data} userId={selectedUserId} onSelectSession={(id) => setSelectedSessionId(id)} onDeleteUser={deleteUser} />
           )}
           {selectedUserId && selectedSessionId && (
             <SessionAnalysis data={data} userId={selectedUserId} sessionId={selectedSessionId} />
@@ -193,10 +218,13 @@ function Adoption({ data, onSelectUser }) {
     const lastSession = userSessions[0];
     const lastActive = lastSession?.started_at;
     const totalMins = userSessions.reduce((acc, s) => acc + (durationMin(s.started_at, s.ended_at) || 0), 0);
+    const inviterUser = u.invited_by_name ? data.users.find((other) => other.display_name === u.invited_by_name) : null;
     return {
       id: u.id,
+      shortId: u.id.slice(0, 8),
       name: u.display_name || u.id.slice(0, 8),
       invitedBy: u.invited_by_name,
+      invitedByShortId: inviterUser ? inviterUser.id.slice(0, 8) : null,
       joined: u.created_at,
       lastActive,
       sessionsCount: userSessions.length,
@@ -241,8 +269,14 @@ function Adoption({ data, onSelectUser }) {
           </div>
           {rows.map((r) => (
             <div key={r.id} style={S.tableRow} onClick={() => onSelectUser(r.id)} className="va-row">
-              <div style={{ flex: 2, fontWeight: 500 }}>{r.name}</div>
-              <div style={{ flex: 1.5, color: "#aaa", fontSize: 12 }}>{r.invitedBy || "—"}</div>
+              <div style={{ flex: 2, fontWeight: 500 }}>
+                {r.name}
+                <span style={{ display: "block", fontSize: 10, color: "#555", fontWeight: 400, fontFamily: "monospace", marginTop: 1 }}>{r.shortId}</span>
+              </div>
+              <div style={{ flex: 1.5, color: "#aaa", fontSize: 12 }}>
+                {r.invitedBy || "—"}
+                {r.invitedByShortId && <span style={{ display: "block", fontSize: 10, color: "#555", fontFamily: "monospace", marginTop: 1 }}>{r.invitedByShortId}</span>}
+              </div>
               <div style={{ flex: 1, textAlign: "center" }}>
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, color: r.status.color }}>
                   <span style={{ width: 8, height: 8, borderRadius: "50%", background: r.status.color }} />
@@ -266,8 +300,11 @@ function Adoption({ data, onSelectUser }) {
 
 // --- User Journey ----------------------------------------------------
 
-function UserJourney({ data, userId, onSelectSession }) {
+function UserJourney({ data, userId, onSelectSession, onDeleteUser }) {
   const user = data.users.find((u) => u.id === userId);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteError, setDeleteError] = useState(null);
+  const [deleting, setDeleting] = useState(false);
   const userSessions = useMemo(
     () => data.sessions.filter((s) => s.user_id === userId).sort((a, b) => new Date(b.started_at) - new Date(a.started_at)),
     [data.sessions, userId]
@@ -283,7 +320,7 @@ function UserJourney({ data, userId, onSelectSession }) {
 
   return (
     <div style={{ padding: "20px 24px" }}>
-      <div style={S.userHeader}>
+      <div style={{ ...S.userHeader, display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
         <div>
           <div style={{ fontSize: 22, fontWeight: 500, fontFamily: "'Cormorant Garamond',serif", color: "#C4A08A" }}>
             {user.display_name || user.id.slice(0, 8)}
@@ -295,9 +332,15 @@ function UserJourney({ data, userId, onSelectSession }) {
             {userSessions[0] && ` · Current phase: ${userSessions[0].phase}`}
           </div>
         </div>
+        <button
+          onClick={() => { setShowDeleteConfirm(true); setDeleteError(null); }}
+          style={{ fontSize: 12, color: "#E24B4A", background: "none", border: "1px solid #3a2020", borderRadius: 4, padding: "6px 14px", cursor: "pointer", flexShrink: 0 }}
+        >
+          Delete user
+        </button>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 24, marginTop: 20 }}>
+      <div className="va-grid">
         <div>
           <div style={S.sectionTitle}>Sessions</div>
           {userSessions.length === 0 && <div style={S.empty}>No sessions yet</div>}
@@ -365,6 +408,43 @@ function UserJourney({ data, userId, onSelectSession }) {
           )}
         </div>
       </div>
+
+
+      {showDeleteConfirm && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}>
+          <div style={{ background: "#1a1a1a", border: "1px solid #3a2020", borderRadius: 8, padding: 32, maxWidth: 400, width: "90%" }}>
+            <div style={{ fontSize: 16, fontWeight: 500, color: "#E24B4A", marginBottom: 12 }}>Delete user?</div>
+            <div style={{ fontSize: 13, color: "#aaa", lineHeight: 1.6, marginBottom: 20 }}>
+              This will permanently delete <strong style={{ color: "#e0ddd8" }}>{user.display_name || user.id.slice(0, 8)}</strong> and all their data — conversations, portrait, hypotheses, scores, and dimensions. This cannot be undone.
+            </div>
+            {deleteError && <div style={{ fontSize: 12, color: "#E24B4A", marginBottom: 12 }}>{deleteError}</div>}
+            <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={deleting}
+                style={{ fontSize: 13, color: "#aaa", background: "none", border: "1px solid #333", borderRadius: 4, padding: "8px 18px", cursor: "pointer" }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  setDeleting(true);
+                  try {
+                    await onDeleteUser(userId);
+                  } catch (e) {
+                    setDeleteError(e.message);
+                    setDeleting(false);
+                  }
+                }}
+                disabled={deleting}
+                style={{ fontSize: 13, color: "#fff", background: "#7a1a1a", border: "none", borderRadius: 4, padding: "8px 18px", cursor: deleting ? "not-allowed" : "pointer", opacity: deleting ? 0.6 : 1 }}
+              >
+                {deleting ? "Deleting…" : "Yes, delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -446,6 +526,97 @@ function SessionAnalysis({ data, userId, sessionId }) {
   const mins = durationMin(session.started_at, session.ended_at);
   const userName = user.display_name || user.id.slice(0, 8);
 
+  function downloadText(filename, text) {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
+    a.download = filename;
+    a.click();
+  }
+
+  function exportConversation() {
+    const header = `Verona — ${userName} · Session #${session.session_number}\n${formatDate(session.started_at)} · ${mins != null ? `${mins}m` : "—"} · ${messages.length} turns · phase: ${session.phase}\n${"─".repeat(60)}\n\n`;
+    const body = messages.map(m => `[${m.role === "user" ? userName : "Angelica"}  ${formatTime(m.created_at)}]\n${m.content}`).join("\n\n");
+    downloadText(`verona-${userName.toLowerCase()}-session${session.session_number}.txt`, header + body);
+  }
+
+  function exportConversationAndAnalysis() {
+    const lines = [];
+    lines.push(`VERONA — ${userName} · Session #${session.session_number}`);
+    lines.push(`${formatDate(session.started_at)} · ${mins != null ? `${mins}m` : "—"} · ${messages.length} turns · phase: ${session.phase}`);
+    lines.push("═".repeat(60));
+    lines.push("");
+
+    lines.push("CONVERSATION");
+    lines.push("─".repeat(40));
+    messages.forEach(m => {
+      lines.push(`[${m.role === "user" ? userName : "Angelica"}  ${formatTime(m.created_at)}]`);
+      lines.push(m.content);
+      lines.push("");
+    });
+
+    if (lastScore) {
+      lines.push("═".repeat(60));
+      lines.push("SCORES");
+      lines.push("─".repeat(40));
+      [["Trust", lastScore.trust_score], ["Depth", lastScore.depth_score], ["Readiness", lastScore.readiness_score], ["Self-knowledge gap", lastScore.self_knowledge_gap], ["Emotional availability", lastScore.emotional_availability]].forEach(([label, val]) => {
+        if (val != null) lines.push(`${label}: ${val}/10`);
+      });
+      lines.push("");
+    }
+
+    if (sessionKeyMoments.length > 0) {
+      lines.push("═".repeat(60));
+      lines.push("KEY MOMENTS");
+      lines.push("─".repeat(40));
+      sessionKeyMoments.forEach(k => {
+        lines.push(`[${k.moment_type || "moment"}] ${k.description}`);
+        if (k.portrait_impact) lines.push(`  Impact: ${k.portrait_impact}`);
+      });
+      lines.push("");
+    }
+
+    if (sessionHypotheses.length > 0) {
+      lines.push("═".repeat(60));
+      lines.push("HYPOTHESES");
+      lines.push("─".repeat(40));
+      sessionHypotheses.forEach(h => {
+        const tag = h.created_session === session.session_number ? "NEW" : h.status.toUpperCase();
+        lines.push(`[${tag}] ${h.text}`);
+        if (h.evidence) lines.push(`  Evidence: ${h.evidence}`);
+      });
+      lines.push("");
+    }
+
+    if (sessionFragments.length > 0) {
+      lines.push("═".repeat(60));
+      lines.push("FRAGMENTS");
+      lines.push("─".repeat(40));
+      sessionFragments.forEach(f => {
+        lines.push(`"${f.text}"`);
+        if (f.significance) lines.push(`  ${f.significance}`);
+      });
+      lines.push("");
+    }
+
+    if (sessionDimsEvidenced.length > 0) {
+      lines.push("═".repeat(60));
+      lines.push("DIMENSIONS EVIDENCED");
+      lines.push("─".repeat(40));
+      sessionDimsEvidenced.forEach(d => lines.push(`${d.dimension_name}: ${d.resolution} (confidence ${d.confidence}, weight ${d.weight})`));
+      lines.push("");
+    }
+
+    if (sessionTerritoryUpdates.length > 0) {
+      lines.push("═".repeat(60));
+      lines.push("TERRITORY COVERED");
+      lines.push("─".repeat(40));
+      sessionTerritoryUpdates.forEach(t => lines.push(`${t.territory}: depth ${t.depth}/5`));
+      lines.push("");
+    }
+
+    downloadText(`verona-${userName.toLowerCase()}-session${session.session_number}-full.txt`, lines.join("\n"));
+  }
+
   return (
     <div style={{ padding: "20px 24px" }}>
       <div style={S.userHeader}>
@@ -457,9 +628,13 @@ function SessionAnalysis({ data, userId, sessionId }) {
             {formatDate(session.started_at)} · {mins != null ? `${mins}m` : "—"} · {messages.length} turns · phase: {session.phase}
           </div>
         </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={exportConversation} style={S.btn}>Export conversation</button>
+          <button onClick={exportConversationAndAnalysis} style={S.btn}>Export with analysis</button>
+        </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 24, marginTop: 20 }}>
+      <div className="va-grid-wide">
         <div>
           <div style={S.sectionTitle}>Conversation</div>
           {messages.length === 0 && <div style={S.empty}>No messages</div>}
@@ -678,7 +853,7 @@ const S = {
   stat: { flex: 1, padding: "16px 12px", textAlign: "center", background: "#1e1e1e", borderRadius: 4, maxWidth: 200 },
   statValue: { fontSize: 28, fontWeight: 600, color: "#C4A08A", fontFamily: "'Cormorant Garamond',serif" },
   statLabel: { fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", color: "#888", marginTop: 4 },
-  tableWrap: { display: "flex", flexDirection: "column", background: "#1e1e1e", borderRadius: 6, overflow: "hidden" },
+  tableWrap: { display: "flex", flexDirection: "column", background: "#1e1e1e", borderRadius: 6, overflow: "hidden", overflowX: "auto" },
   tableRow: { display: "flex", padding: "12px 16px", borderBottom: "1px solid #2a2a2a", cursor: "pointer", alignItems: "center", transition: "background 0.1s" },
   tableHead: { fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em", color: "#888", fontWeight: 500, cursor: "default", background: "#161616" },
   userHeader: { display: "flex", justifyContent: "space-between", alignItems: "baseline", paddingBottom: 12, borderBottom: "1px solid #2a2a2a" },

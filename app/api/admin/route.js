@@ -55,3 +55,24 @@ export async function GET(req) {
     return Response.json({ error: e.message }, { status: 500 });
   }
 }
+
+export async function DELETE(req) {
+  const auth = req.headers.get("authorization");
+  if (auth !== process.env.ADMIN_PASSWORD) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { userId } = await req.json();
+  if (!userId) return Response.json({ error: "userId required" }, { status: 400 });
+
+  const supabase = getSupabaseServer();
+
+  // Clear the invite link so the token can't be reused to recreate the user
+  await supabase.from("invites").update({ user_id: null, used_at: null }).eq("user_id", userId);
+
+  // Delete the user — cascades to all sessions, messages, scores, dimensions, etc.
+  const { error } = await supabase.from("users").delete().eq("id", userId);
+  if (error) return Response.json({ error: error.message }, { status: 500 });
+
+  return Response.json({ ok: true });
+}
