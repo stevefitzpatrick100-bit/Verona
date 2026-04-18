@@ -16,8 +16,9 @@ export default function RootLayout({ children }) {
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
         <style>{`
           * { box-sizing: border-box; margin: 0; padding: 0; }
-          html, body { height: 100%; }
+          html, body { height: 100%; overflow-x: hidden; }
           body { height: 100dvh; }
+          input, textarea { font-size: 16px; }
           #app-shell {
             max-width: 480px;
             margin: 0 auto;

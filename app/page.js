@@ -445,7 +445,7 @@ const S = {
   aBub: { padding: "12px 4px", maxWidth: "85%", fontSize: 17, lineHeight: 1.65, fontFamily: "'Cormorant Garamond',serif", whiteSpace: "pre-wrap" },
   wait: { padding: "12px 4px", fontSize: 22, color: "#C4A08A", fontFamily: "'Cormorant Garamond',serif", letterSpacing: 4 },
   bar: { display: "flex", alignItems: "center", padding: "12px 16px", paddingBottom: "max(16px, env(safe-area-inset-bottom))", gap: 10, borderTop: "1px solid #E8E4DF" },
-  inp: { flex: 1, border: "1px solid #E8E4DF", borderRadius: 24, padding: "12px 18px", fontSize: 15, fontFamily: "'DM Sans',sans-serif", outline: "none", background: "#fff", color: "#2C2825" },
+  inp: { flex: 1, border: "1px solid #E8E4DF", borderRadius: 24, padding: "12px 18px", fontSize: 16, fontFamily: "'DM Sans',sans-serif", outline: "none", background: "#fff", color: "#2C2825" },
   snd: { background: "#2C2825", border: "none", borderRadius: "50%", width: 40, height: 40, cursor: "pointer", fontSize: 18, color: "#FAF8F5", display: "flex", alignItems: "center", justifyContent: "center" },
   panel: { width: 320, borderLeft: "1px solid #E8E4DF", overflowY: "auto", padding: "16px", background: "#fff", flexShrink: 0 },
   panelTitle: { fontFamily: "'Cormorant Garamond',serif", fontSize: 20, fontWeight: 500, marginBottom: 16 },
