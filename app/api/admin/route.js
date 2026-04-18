@@ -21,10 +21,11 @@ export async function GET(req) {
       { data: silences },
       { data: territory },
       { data: essentialTruth },
+      { data: invites },
     ] = await Promise.all([
       supabase.from("users").select("*").order("created_at", { ascending: false }),
       supabase.from("sessions").select("*").order("started_at", { ascending: false }),
-      supabase.from("messages").select("*").order("created_at", { ascending: false }).limit(200),
+      supabase.from("messages").select("*").order("created_at", { ascending: false }),
       supabase.from("scores").select("*").order("measured_at", { ascending: false }),
       supabase.from("fragments").select("*").order("created_at", { ascending: false }),
       supabase.from("hypotheses").select("*").order("created_at", { ascending: false }),
@@ -33,6 +34,7 @@ export async function GET(req) {
       supabase.from("silences").select("*"),
       supabase.from("territory_map").select("*").gt("depth", 0),
       supabase.from("essential_truth").select("*"),
+      supabase.from("invites").select("*").order("created_at", { ascending: false }),
     ]);
 
     return Response.json({
@@ -47,6 +49,7 @@ export async function GET(req) {
       silences: silences || [],
       territory: territory || [],
       essentialTruth: essentialTruth || [],
+      invites: invites || [],
     });
   } catch (e) {
     return Response.json({ error: e.message }, { status: 500 });

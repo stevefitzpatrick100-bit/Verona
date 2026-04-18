@@ -57,6 +57,11 @@ export async function POST(req) {
         { session_id: sessionId, user_id: userId, role: "user", content: lastUserMsg.content },
         { session_id: sessionId, user_id: userId, role: "assistant", content: reply },
       ]);
+      // Keep ended_at current so admin shows accurate session duration
+      await supabase
+        .from("sessions")
+        .update({ ended_at: new Date().toISOString() })
+        .eq("id", sessionId);
     }
 
     // Run portrait analysis in background (non-blocking)
