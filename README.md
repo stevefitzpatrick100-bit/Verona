@@ -102,3 +102,5 @@ Two API calls per user message:
 - ~$0.01-0.03 per message in API usage (conversation + analysis)
 - ~$0.30-0.50 per full demo conversation (20 exchanges)
 - Supabase free tier handles prototype scale easily
+
+- Deploy
