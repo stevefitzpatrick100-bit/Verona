@@ -1,4 +1,5 @@
-"use client";
+const fs = require("fs");
+const content = `"use client";
 import { useState, useEffect, useRef, useCallback } from "react";
 
 export default function Home() {
@@ -125,8 +126,28 @@ export default function Home() {
       setLoading(false);
       return;
     }
-    setLoading(false);
-    send("Hi Angelica", sid);
+    if (first) {
+      try {
+        const res = await fetch(\`/api/messages?sessionId=\${sid}\`);
+        const data = await res.json();
+        if (data.messages) {
+          setMessages(
+            data.messages.map((m) => ({
+              role: m.role,
+              content: m.content,
+              created_at: m.created_at,
+            }))
+          );
+        }
+      } catch (e) {
+        console.error("Failed to load opening:", e);
+      }
+      setLoading(false);
+      setTimeout(() => inputRef.current?.focus(), 100);
+    } else {
+      setLoading(false);
+      send("Hi", sid);
+    }
   }
 
   // Refresh portrait data periodically
@@ -139,7 +160,7 @@ export default function Home() {
   async function fetchPortrait() {
     if (!userId) return;
     try {
-      const res = await fetch(`/api/portrait?userId=${userId}`);
+      const res = await fetch(\`/api/portrait?userId=\${userId}\`);
       const data = await res.json();
       if (!data.error) setPortrait(data);
     } catch (e) {
@@ -309,12 +330,6 @@ export default function Home() {
               <button onClick={beginConversation} style={S.go} disabled={loading}>
                 {loading ? "..." : "Start talking to Angelica"}
               </button>
-              <a
-                href="/admin"
-                style={{ position: "absolute", bottom: 24, right: 24, fontSize: 11, color: "#C4A08A", opacity: 0.5, textDecoration: "none", letterSpacing: 1 }}
-              >
-                admin
-              </a>
             </div>
           )}
 
@@ -346,7 +361,7 @@ export default function Home() {
                     <div key={label} style={S.row}>
                       <span style={S.label}>{label}</span>
                       <div style={S.barOuter}>
-                        <div style={{ ...S.barInner, width: `${(val / 10) * 100}%` }} />
+                        <div style={{ ...S.barInner, width: \`\${(val / 10) * 100}%\` }} />
                       </div>
                       <span style={S.val}>{val}</span>
                     </div>
@@ -450,7 +465,7 @@ const S = {
   meta: { fontSize: 11, color: "#9B9590", marginTop: 1 },
   iconBtn: { background: "none", border: "1px solid #E8E4DF", borderRadius: 8, padding: "6px 14px", fontSize: 13, color: "#9B9590", cursor: "pointer" },
   msgs: { flex: 1, overflowY: "auto", padding: "20px 16px", display: "flex", flexDirection: "column", gap: 6 },
-  splash: { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, textAlign: "center", position: "relative" },
+  splash: { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, textAlign: "center" },
   logo: { fontFamily: "'Cormorant Garamond',serif", fontSize: 52, fontWeight: 500, letterSpacing: "0.02em" },
   tag: { fontFamily: "'Cormorant Garamond',serif", fontSize: 18, fontStyle: "italic", color: "#9B9590", marginTop: 6, marginBottom: 48 },
   go: { background: "#2C2825", color: "#FAF8F5", border: "none", borderRadius: 28, padding: "14px 32px", fontSize: 15, cursor: "pointer" },
@@ -478,3 +493,6 @@ const S = {
   dimVal: { color: "#9B9590", fontSize: 11 },
   itemText: { fontSize: 13, color: "#5C5550", lineHeight: 1.5, marginBottom: 6 },
 };
+`;
+fs.writeFileSync("c:\\Projects\\Verona\\verona-demo\\app\\page.js", content, "utf8");
+console.log("Done");
