@@ -270,7 +270,6 @@ export default function Home() {
 
   return (
     <div style={S.wrap}>
-      <a href="/admin" style={{ position: "fixed", bottom: 16, left: 16, fontSize: 12, color: "#C4A08A", opacity: 0.6, textDecoration: "none", letterSpacing: 1, zIndex: 100, padding: "8px 12px" }}>admin</a>
       {/* Header */}
       <div style={S.head}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -281,18 +280,6 @@ export default function Home() {
           </div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          {!empty && (
-            <>
-              <button
-                onClick={() => { setShowPortrait(!showPortrait); if (!showPortrait) fetchPortrait(); }}
-                style={S.iconBtn}
-                title="Portrait"
-              >
-                &#9679;
-              </button>
-              <button onClick={newConversation} style={S.iconBtn}>New</button>
-            </>
-          )}
         </div>
       </div>
 
