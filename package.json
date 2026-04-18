@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "ship": "git add -A && git commit -m \"deploy\" && git push origin main"
+    "ship": "git add -A && git commit -m \"deploy\" && git push origin main",
+    "deploy:dev": "git add -A && git commit -m \"deploy dev\" && git push origin dev && npx vercel 2>&1"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
