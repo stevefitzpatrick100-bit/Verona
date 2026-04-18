@@ -256,13 +256,13 @@ export default function Home() {
   if (accessDenied) {
     return (
       <div style={S.wrap}>
+        <a href="/admin" style={{ position: "fixed", bottom: 16, right: 16, fontSize: 12, color: "#C4A08A", opacity: 0.6, textDecoration: "none", letterSpacing: 1, zIndex: 100, padding: "8px 12px" }}>admin</a>
         <div style={S.splash}>
           <div style={S.logo}>Verona</div>
           <div style={S.tag}>Find love worth dying for.</div>
           <div style={{ marginTop: 32, fontSize: 15, color: "#9B9590", maxWidth: 360, lineHeight: 1.6 }}>
             Angelica is available by invitation only. If someone shared a link with you, make sure you&apos;re using the full URL they sent.
           </div>
-          <a href="/admin" style={{ position: "absolute", bottom: 24, right: 24, fontSize: 11, color: "#C4A08A", opacity: 0.5, textDecoration: "none", letterSpacing: 1 }}>admin</a>
         </div>
       </div>
     );
@@ -270,7 +270,7 @@ export default function Home() {
 
   return (
     <div style={S.wrap}>
-      <a href="/admin" style={{ position: "fixed", bottom: 16, right: 16, fontSize: 11, color: "#C4A08A", opacity: 0.35, textDecoration: "none", letterSpacing: 1, zIndex: 100 }}>admin</a>
+      <a href="/admin" style={{ position: "fixed", bottom: 16, right: 16, fontSize: 12, color: "#C4A08A", opacity: 0.6, textDecoration: "none", letterSpacing: 1, zIndex: 100, padding: "8px 12px" }}>admin</a>
       {/* Header */}
       <div style={S.head}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -311,12 +311,6 @@ export default function Home() {
               <button onClick={beginConversation} style={S.go} disabled={loading}>
                 {loading ? "..." : "Start talking to Angelica"}
               </button>
-              <a
-                href="/admin"
-                style={{ position: "absolute", bottom: 24, right: 24, fontSize: 11, color: "#C4A08A", opacity: 0.5, textDecoration: "none", letterSpacing: 1 }}
-              >
-                admin
-              </a>
             </div>
           )}
 
@@ -445,7 +439,7 @@ export default function Home() {
 }
 
 const S = {
-  wrap: { display: "flex", flexDirection: "column", height: "100vh", background: "#FAF8F5", fontFamily: "'DM Sans',sans-serif", color: "#2C2825" },
+  wrap: { display: "flex", flexDirection: "column", height: "100vh", minHeight: "-webkit-fill-available", height: "100dvh", background: "#FAF8F5", fontFamily: "'DM Sans',sans-serif", color: "#2C2825" },
   head: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px", borderBottom: "1px solid #E8E4DF" },
   avatar: { width: 38, height: 38, borderRadius: "50%", background: "#C4A08A", color: "#FAF8F5", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Cormorant Garamond',serif", fontSize: 20, fontWeight: 500, flexShrink: 0 },
   name: { fontFamily: "'Cormorant Garamond',serif", fontSize: 20, fontWeight: 500, letterSpacing: "0.02em" },
@@ -463,7 +457,7 @@ const S = {
   uBub: { background: "#2C2825", color: "#FAF8F5", padding: "12px 16px", borderRadius: "20px 20px 4px 20px", maxWidth: "80%", fontSize: 15, lineHeight: 1.55 },
   aBub: { padding: "12px 4px", maxWidth: "85%", fontSize: 17, lineHeight: 1.65, fontFamily: "'Cormorant Garamond',serif", whiteSpace: "pre-wrap" },
   wait: { padding: "12px 4px", fontSize: 22, color: "#C4A08A", fontFamily: "'Cormorant Garamond',serif", letterSpacing: 4 },
-  bar: { display: "flex", alignItems: "center", padding: "12px 16px 24px", gap: 10, borderTop: "1px solid #E8E4DF" },
+  bar: { display: "flex", alignItems: "center", padding: "12px 16px", paddingBottom: "max(16px, env(safe-area-inset-bottom))", gap: 10, borderTop: "1px solid #E8E4DF" },
   inp: { flex: 1, border: "1px solid #E8E4DF", borderRadius: 24, padding: "12px 18px", fontSize: 15, fontFamily: "'DM Sans',sans-serif", outline: "none", background: "#fff", color: "#2C2825" },
   snd: { background: "#2C2825", border: "none", borderRadius: "50%", width: 40, height: 40, cursor: "pointer", fontSize: 18, color: "#FAF8F5", display: "flex", alignItems: "center", justifyContent: "center" },
   panel: { width: 320, borderLeft: "1px solid #E8E4DF", overflowY: "auto", padding: "16px", background: "#fff", flexShrink: 0 },

@@ -13,7 +13,12 @@ export default function RootLayout({ children }) {
           href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;1,400&family=DM+Sans:wght@400;500&display=swap"
           rel="stylesheet"
         />
-        <style>{`* { box-sizing: border-box; margin: 0; padding: 0; }`}</style>
+        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+        <style>{`
+          * { box-sizing: border-box; margin: 0; padding: 0; }
+          html, body { height: 100%; }
+          body { height: 100dvh; }
+        `}</style>
       </head>
       <body>{children}</body>
     </html>
