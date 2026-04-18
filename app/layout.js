@@ -18,9 +18,19 @@ export default function RootLayout({ children }) {
           * { box-sizing: border-box; margin: 0; padding: 0; }
           html, body { height: 100%; }
           body { height: 100dvh; }
+          #app-shell {
+            max-width: 480px;
+            margin: 0 auto;
+            height: 100dvh;
+            position: relative;
+            box-shadow: 0 0 40px rgba(0,0,0,0.08);
+          }
+          @media (max-width: 480px) {
+            #app-shell { box-shadow: none; }
+          }
         `}</style>
       </head>
-      <body>{children}</body>
+      <body><div id="app-shell">{children}</div></body>
     </html>
   );
 }
