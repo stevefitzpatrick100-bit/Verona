@@ -256,7 +256,7 @@ export default function Home() {
   if (accessDenied) {
     return (
       <div style={S.wrap}>
-        <a href="/admin" style={{ position: "fixed", bottom: 16, right: 16, fontSize: 12, color: "#C4A08A", opacity: 0.6, textDecoration: "none", letterSpacing: 1, zIndex: 100, padding: "8px 12px" }}>admin</a>
+        <a href="/admin" style={{ position: "fixed", bottom: 16, left: 16, fontSize: 12, color: "#C4A08A", opacity: 0.6, textDecoration: "none", letterSpacing: 1, zIndex: 100, padding: "8px 12px" }}>admin</a>
         <div style={S.splash}>
           <div style={S.logo}>Verona</div>
           <div style={S.tag}>Find love worth dying for.</div>
@@ -270,7 +270,7 @@ export default function Home() {
 
   return (
     <div style={S.wrap}>
-      <a href="/admin" style={{ position: "fixed", bottom: 16, right: 16, fontSize: 12, color: "#C4A08A", opacity: 0.6, textDecoration: "none", letterSpacing: 1, zIndex: 100, padding: "8px 12px" }}>admin</a>
+      <a href="/admin" style={{ position: "fixed", bottom: 16, left: 16, fontSize: 12, color: "#C4A08A", opacity: 0.6, textDecoration: "none", letterSpacing: 1, zIndex: 100, padding: "8px 12px" }}>admin</a>
       {/* Header */}
       <div style={S.head}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
