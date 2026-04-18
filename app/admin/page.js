@@ -635,12 +635,12 @@ function Invites({ invites, newInviteName, setNewInviteName, newInviterName, set
           </div>
           <input
             readOnly
-            value={`${typeof window !== "undefined" ? window.location.origin : ""}/?invite=${inv.token}`}
+            value={`https://verona-ai.app/?invite=${inv.token}`}
             style={{ ...S.input, flex: 1, fontSize: 11 }}
             onClick={(e) => { e.target.select(); navigator.clipboard.writeText(e.target.value); }}
           />
           <button
-            onClick={() => navigator.clipboard.writeText(`${window.location.origin}/?invite=${inv.token}`)}
+            onClick={() => navigator.clipboard.writeText(`https://verona-ai.app/?invite=${inv.token}`)}
             style={{ ...S.btn, fontSize: 11 }}
           >Copy</button>
           <button onClick={() => deleteInvite(inv.id)} style={{ ...S.btn, background: "#433", color: "#E24B4A", fontSize: 11 }}>Delete</button>
