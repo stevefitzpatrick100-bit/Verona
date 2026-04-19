@@ -22,6 +22,7 @@ export async function GET(req) {
       { data: territory },
       { data: essentialTruth },
       { data: invites },
+      { data: cq },
     ] = await Promise.all([
       supabase.from("users").select("*").order("created_at", { ascending: false }),
       supabase.from("sessions").select("*").order("started_at", { ascending: false }),
@@ -35,6 +36,7 @@ export async function GET(req) {
       supabase.from("territory_map").select("*").gt("depth", 0),
       supabase.from("essential_truth").select("*"),
       supabase.from("invites").select("*").order("created_at", { ascending: false }),
+      supabase.from("cq_dimensions").select("*").order("measured_at", { ascending: false }),
     ]);
 
     return Response.json({
@@ -50,6 +52,7 @@ export async function GET(req) {
       territory: territory || [],
       essentialTruth: essentialTruth || [],
       invites: invites || [],
+      cq: cq || [],
     });
   } catch (e) {
     return Response.json({ error: e.message }, { status: 500 });

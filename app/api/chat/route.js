@@ -3,6 +3,28 @@ import { ANGELICA_SYSTEM_PROMPT, PORTRAIT_ANALYSIS_PROMPT } from "@/lib/prompts"
 import { buildPortraitContext } from "@/lib/portrait";
 import { applyPortraitUpdate } from "@/lib/portrait-update";
 
+// Cache the active prompt for 60 seconds to avoid a DB hit on every message
+let _promptCache = null;
+let _promptCachedAt = 0;
+const PROMPT_CACHE_TTL_MS = 60_000;
+
+async function getActiveAngelicaPrompt(supabase) {
+  const now = Date.now();
+  if (_promptCache && now - _promptCachedAt < PROMPT_CACHE_TTL_MS) return _promptCache;
+
+  const { data } = await supabase
+    .from("prompt_versions")
+    .select("content")
+    .eq("prompt_key", "angelica")
+    .eq("is_active", true)
+    .single();
+
+  const prompt = data?.content || ANGELICA_SYSTEM_PROMPT;
+  _promptCache = prompt;
+  _promptCachedAt = now;
+  return prompt;
+}
+
 export async function POST(req) {
   const { messages, userId, sessionId } = await req.json();
 
@@ -24,7 +46,8 @@ export async function POST(req) {
     const sessionNumber = count || 1;
 
     // Build full system prompt with portrait context
-    const systemPrompt = ANGELICA_SYSTEM_PROMPT + "\n\n## Portrait & Memory\n\n" + portraitContext;
+    const activePrompt = await getActiveAngelicaPrompt(supabase);
+    const systemPrompt = activePrompt + "\n\n## Portrait & Memory\n\n" + portraitContext;
 
     // Call Anthropic API for conversation
     const response = await fetch("https://api.anthropic.com/v1/messages", {

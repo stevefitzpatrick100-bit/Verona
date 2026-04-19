@@ -49,7 +49,7 @@ export default function Admin() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState(null);
   const [data, setData] = useState(null);
-  const [tab, setTab] = useState("conversations");
+  const [tab, setTab] = useState("users");
   const [selectedUserId, setSelectedUserId] = useState(null);
   const [selectedSessionId, setSelectedSessionId] = useState(null);
   const [newInviteName, setNewInviteName] = useState("");
@@ -100,6 +100,12 @@ export default function Admin() {
       body: JSON.stringify({ id }),
     });
     fetchData();
+  }
+
+  function switchTab(newTab) {
+    setTab(newTab);
+    setSelectedUserId(null);
+    setSelectedSessionId(null);
   }
 
   async function deleteUser(userId) {
@@ -159,14 +165,16 @@ export default function Admin() {
       </div>
 
       <div style={S.tabBar}>
-        <button onClick={() => setTab("conversations")} style={{ ...S.tab, ...(tab === "conversations" ? S.tabActive : {}) }}>Conversations</button>
-        <button onClick={() => setTab("invites")} style={{ ...S.tab, ...(tab === "invites" ? S.tabActive : {}) }}>Invites</button>
+        <button onClick={() => switchTab("invites")} style={{ ...S.tab, ...(tab === "invites" ? S.tabActive : {}) }}>Invites</button>
+        <button onClick={() => switchTab("users")} style={{ ...S.tab, ...(tab === "users" ? S.tabActive : {}) }}>Users</button>
+        <button onClick={() => switchTab("conversations")} style={{ ...S.tab, ...(tab === "conversations" ? S.tabActive : {}) }}>Conversations</button>
+        <button onClick={() => switchTab("prompts")} style={{ ...S.tab, ...(tab === "prompts" ? S.tabActive : {}) }}>Prompts</button>
       </div>
 
-      {tab === "conversations" && (
+      {tab === "users" && (
         <>
           <div style={S.crumb}>
-            <span onClick={() => { setSelectedUserId(null); setSelectedSessionId(null); }} style={S.crumbLink}>Adoption</span>
+            <span onClick={() => { setSelectedUserId(null); setSelectedSessionId(null); }} style={S.crumbLink}>Users</span>
             {currentUser && (
               <>
                 <span style={S.crumbSep}>›</span>
@@ -184,12 +192,33 @@ export default function Admin() {
               </>
             )}
           </div>
-
           {!selectedUserId && <Adoption data={data} onSelectUser={(id) => setSelectedUserId(id)} />}
           {selectedUserId && !selectedSessionId && (
-            <UserJourney data={data} userId={selectedUserId} onSelectSession={(id) => setSelectedSessionId(id)} onDeleteUser={deleteUser} />
+            <UserProfile data={data} userId={selectedUserId} onSelectSession={(id) => setSelectedSessionId(id)} onDeleteUser={deleteUser} />
           )}
           {selectedUserId && selectedSessionId && (
+            <SessionAnalysis data={data} userId={selectedUserId} sessionId={selectedSessionId} />
+          )}
+        </>
+      )}
+
+      {tab === "conversations" && (
+        <>
+          <div style={S.crumb}>
+            <span onClick={() => { setSelectedSessionId(null); setSelectedUserId(null); }} style={S.crumbLink}>Conversations</span>
+            {currentSession && (
+              <>
+                <span style={S.crumbSep}>›</span>
+                <span style={{ ...S.crumbLink, color: "#e0ddd8", cursor: "default" }}>
+                  {currentUser?.display_name || currentUser?.id.slice(0, 8)} · Session #{currentSession.session_number}
+                </span>
+              </>
+            )}
+          </div>
+          {!selectedSessionId && (
+            <ConversationsList data={data} onSelectSession={(sessionId, userId) => { setSelectedSessionId(sessionId); setSelectedUserId(userId); }} />
+          )}
+          {selectedSessionId && (
             <SessionAnalysis data={data} userId={selectedUserId} sessionId={selectedSessionId} />
           )}
         </>
@@ -205,6 +234,193 @@ export default function Admin() {
           createInvite={createInvite}
           deleteInvite={deleteInvite}
         />
+      )}
+
+      {tab === "prompts" && <Prompts />}
+    </div>
+  );
+}
+
+// --- Prompts view ----------------------------------------------------
+
+function Prompts() {
+  const [versions, setVersions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [editContent, setEditContent] = useState("");
+  const [editLabel, setEditLabel] = useState("");
+  const [editNotes, setEditNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const [activatingId, setActivatingId] = useState(null);
+
+  const pw = () => sessionStorage.getItem("admin-pw");
+
+  async function load() {
+    setLoading(true);
+    const res = await fetch("/api/prompts?key=angelica", { headers: { authorization: pw() } });
+    const { versions: v } = await res.json();
+    setVersions(v || []);
+    const active = (v || []).find((x) => x.is_active);
+    if (active) setEditContent(active.content);
+    setLoading(false);
+  }
+
+  useEffect(() => { load(); }, []);
+
+  const activeVersion = versions.find((v) => v.is_active);
+  const isDirty = editContent !== (activeVersion?.content || "");
+
+  async function saveNewVersion() {
+    if (!editLabel.trim()) { setSaveError("Give this version a label before saving"); return; }
+    setSaving(true); setSaveError(null);
+    const res = await fetch("/api/prompts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", authorization: pw() },
+      body: JSON.stringify({ content: editContent, label: editLabel, notes: editNotes, key: "angelica" }),
+    });
+    const json = await res.json();
+    if (json.error) { setSaveError(json.error); setSaving(false); return; }
+    setEditLabel(""); setEditNotes("");
+    await load();
+    setSaving(false);
+  }
+
+  async function activateVersion(id) {
+    setActivatingId(id);
+    await fetch("/api/prompts", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", authorization: pw() },
+      body: JSON.stringify({ id, key: "angelica" }),
+    });
+    await load();
+    setActivatingId(null);
+  }
+
+  async function deleteVersion(id) {
+    if (!confirm("Delete this version? This cannot be undone.")) return;
+    await fetch("/api/prompts", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json", authorization: pw() },
+      body: JSON.stringify({ id }),
+    });
+    await load();
+  }
+
+  if (loading) return <div style={{ padding: 40, color: "#888" }}>Loading…</div>;
+
+  return (
+    <div style={{ padding: "20px 24px", maxWidth: 900 }}>
+
+      {/* ── Active version header ── */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+        <div>
+          <div style={S.sectionTitle}>Angelica — system prompt</div>
+          {activeVersion && (
+            <div style={{ fontSize: 11, color: "#666", marginTop: 2 }}>
+              Active: <span style={{ color: "#C4A08A" }}>{activeVersion.label}</span>
+              {activeVersion.created_at && ` · saved ${timeAgo(activeVersion.created_at)}`}
+              {activeVersion.id === null && " · from code (not yet saved to DB)"}
+            </div>
+          )}
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            onClick={() => navigator.clipboard.writeText(editContent)}
+            style={{ fontSize: 12, color: "#aaa", background: "none", border: "1px solid #333", borderRadius: 4, padding: "5px 12px", cursor: "pointer" }}
+          >Copy</button>
+          <button
+            onClick={() => setShowHistory(!showHistory)}
+            style={{ fontSize: 12, color: showHistory ? "#C4A08A" : "#aaa", background: "none", border: "1px solid #333", borderRadius: 4, padding: "5px 12px", cursor: "pointer" }}
+          >History ({versions.length})</button>
+        </div>
+      </div>
+
+      {/* ── Editor ── */}
+      <textarea
+        value={editContent}
+        onChange={(e) => setEditContent(e.target.value)}
+        style={{
+          width: "100%", minHeight: 480, background: "#111", color: "#d0cdc8",
+          border: `1px solid ${isDirty ? "#5a4a1a" : "#2a2a2a"}`, borderRadius: 6, padding: 16,
+          fontSize: 12, lineHeight: 1.7, fontFamily: "monospace",
+          resize: "vertical", boxSizing: "border-box", outline: "none",
+        }}
+      />
+      <div style={{ fontSize: 11, color: "#555", marginTop: 4, marginBottom: 16 }}>
+        {editContent.length.toLocaleString()} chars · {editContent.split("\n").length} lines
+        {isDirty && <span style={{ color: "#d4a84a", marginLeft: 12 }}>● Unsaved changes</span>}
+      </div>
+
+      {/* ── Save as new version ── */}
+      {isDirty && (
+        <div style={{ background: "#1e1e1e", border: "1px solid #2a2a2a", borderRadius: 6, padding: 16, marginBottom: 24 }}>
+          <div style={{ fontSize: 12, color: "#C4A08A", marginBottom: 12, fontWeight: 500 }}>Save as new version</div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+            <input
+              value={editLabel}
+              onChange={(e) => setEditLabel(e.target.value)}
+              placeholder="Version label (e.g. v2 — warmer opening)"
+              style={{ ...S.input, flex: 2 }}
+            />
+            <input
+              value={editNotes}
+              onChange={(e) => setEditNotes(e.target.value)}
+              placeholder="What changed? (optional)"
+              style={{ ...S.input, flex: 3 }}
+            />
+            <button
+              onClick={saveNewVersion}
+              disabled={saving}
+              style={{ ...S.btn, whiteSpace: "nowrap", opacity: saving ? 0.6 : 1 }}
+            >{saving ? "Saving…" : "Save & activate"}</button>
+          </div>
+          {saveError && <div style={{ fontSize: 12, color: "#E24B4A" }}>{saveError}</div>}
+        </div>
+      )}
+
+      {/* ── Version history ── */}
+      {showHistory && (
+        <div>
+          <div style={S.sectionTitle}>Version history</div>
+          {versions.map((v) => (
+            <div key={v.id || "seed"} style={{
+              background: v.is_active ? "#1e2230" : "#1a1a1a",
+              border: `1px solid ${v.is_active ? "#3a3a5a" : "#2a2a2a"}`,
+              borderRadius: 6, padding: "12px 16px", marginBottom: 8,
+            }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                <div>
+                  <span style={{ fontWeight: 500, color: v.is_active ? "#C4A08A" : "#e0ddd8" }}>{v.label}</span>
+                  {v.is_active && <span style={{ marginLeft: 8, fontSize: 10, color: "#7cb87c", textTransform: "uppercase", letterSpacing: "0.06em" }}>Active</span>}
+                  <div style={{ fontSize: 11, color: "#666", marginTop: 3 }}>
+                    {v.created_at ? timeAgo(v.created_at) : ""}
+                    {v.notes && <span style={{ marginLeft: 8, color: "#888" }}>{v.notes}</span>}
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                  <button
+                    onClick={() => setEditContent(v.content)}
+                    style={{ fontSize: 11, color: "#aaa", background: "none", border: "1px solid #333", borderRadius: 4, padding: "4px 10px", cursor: "pointer" }}
+                  >Load into editor</button>
+                  {!v.is_active && v.id && (
+                    <button
+                      onClick={() => activateVersion(v.id)}
+                      disabled={activatingId === v.id}
+                      style={{ fontSize: 11, color: "#C4A08A", background: "none", border: "1px solid #3a3020", borderRadius: 4, padding: "4px 10px", cursor: "pointer" }}
+                    >{activatingId === v.id ? "Activating…" : "Activate"}</button>
+                  )}
+                  {!v.is_active && v.id && (
+                    <button
+                      onClick={() => deleteVersion(v.id)}
+                      style={{ fontSize: 11, color: "#E24B4A", background: "none", border: "1px solid #3a2020", borderRadius: 4, padding: "4px 10px", cursor: "pointer" }}
+                    >Delete</button>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -300,36 +516,71 @@ function Adoption({ data, onSelectUser }) {
 
 // --- User Journey ----------------------------------------------------
 
-function UserJourney({ data, userId, onSelectSession, onDeleteUser }) {
+function UserProfile({ data, userId, onSelectSession, onDeleteUser }) {
   const user = data.users.find((u) => u.id === userId);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteError, setDeleteError] = useState(null);
   const [deleting, setDeleting] = useState(false);
+
   const userSessions = useMemo(
     () => data.sessions.filter((s) => s.user_id === userId).sort((a, b) => new Date(b.started_at) - new Date(a.started_at)),
     [data.sessions, userId]
   );
 
-  const userEssentialTruth = data.essentialTruth.find((t) => t.user_id === userId);
-  const userActiveHypotheses = data.hypotheses.filter((h) => h.user_id === userId && h.status === "active");
-  const userResolvedHypotheses = data.hypotheses.filter((h) => h.user_id === userId && ["confirmed", "revised", "discarded"].includes(h.status));
-  const userSilences = data.silences.filter((s) => s.user_id === userId).sort((a, b) => (b.sessions_absent || 0) - (a.sessions_absent || 0));
-  const userTopDimensions = data.dimensions.filter((d) => d.user_id === userId).sort((a, b) => (b.weight || 0) - (a.weight || 0)).slice(0, 8);
+  const latestSession = userSessions[0];
+  const status = userStatus(latestSession?.started_at);
+
+  // Scores — latest across all sessions
+  const userScores = useMemo(
+    () => data.scores.filter((s) => s.user_id === userId).sort((a, b) => new Date(b.measured_at) - new Date(a.measured_at)),
+    [data.scores, userId]
+  );
+  const latestScore = userScores[0];
+
+  // CQ — latest entry
+  const userCQ = useMemo(
+    () => (data.cq || []).filter((c) => c.user_id === userId).sort((a, b) => new Date(b.measured_at) - new Date(a.measured_at)),
+    [data.cq, userId]
+  );
+  const latestCQ = userCQ[0];
+
+  const essentialTruth = data.essentialTruth.find((t) => t.user_id === userId);
+  const activeHypotheses = data.hypotheses.filter((h) => h.user_id === userId && h.status === "active");
+  const resolvedHypotheses = data.hypotheses.filter((h) => h.user_id === userId && ["confirmed", "revised", "discarded"].includes(h.status));
+  const silences = data.silences.filter((s) => s.user_id === userId).sort((a, b) => (b.sessions_absent || 0) - (a.sessions_absent || 0));
+  const topDimensions = data.dimensions.filter((d) => d.user_id === userId).sort((a, b) => (b.weight || 0) - (a.weight || 0)).slice(0, 10);
 
   if (!user) return <div style={{ padding: 40, color: "#888" }}>User not found</div>;
 
+  const phaseColor = { trust: "#888", hypothesis: "#d4a84a", diffusion: "#C4A08A" };
+
   return (
     <div style={{ padding: "20px 24px" }}>
-      <div style={{ ...S.userHeader, display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+
+      {/* ── Header ── */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", paddingBottom: 16, borderBottom: "1px solid #2a2a2a", marginBottom: 24 }}>
         <div>
-          <div style={{ fontSize: 22, fontWeight: 500, fontFamily: "'Cormorant Garamond',serif", color: "#C4A08A" }}>
-            {user.display_name || user.id.slice(0, 8)}
+          <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+            <div style={{ fontSize: 26, fontWeight: 500, fontFamily: "'Cormorant Garamond',serif", color: "#C4A08A" }}>
+              {user.display_name || user.id.slice(0, 8)}
+            </div>
+            {latestSession?.phase && (
+              <span style={{ fontSize: 11, color: phaseColor[latestSession.phase] || "#888", background: "#222", border: "1px solid #333", borderRadius: 12, padding: "2px 10px", textTransform: "capitalize" }}>
+                {latestSession.phase}
+              </span>
+            )}
+            <span style={{ fontSize: 11, color: status.color, display: "flex", alignItems: "center", gap: 5 }}>
+              <span style={{ width: 7, height: 7, borderRadius: "50%", background: status.color }} />{status.label}
+            </span>
           </div>
-          <div style={{ fontSize: 12, color: "#888", marginTop: 4 }}>
-            Joined {formatDate(user.created_at)}
-            {user.invited_by_name && ` · Invited by ${user.invited_by_name}`}
-            {" · "}{userSessions.length} session{userSessions.length === 1 ? "" : "s"}
-            {userSessions[0] && ` · Current phase: ${userSessions[0].phase}`}
+          <div style={{ fontSize: 11, color: "#555", marginTop: 6, fontFamily: "monospace" }}>
+            {user.id.slice(0, 8)}
+            <span style={{ fontFamily: "inherit", fontSize: 12, color: "#666", marginLeft: 12 }}>
+              Joined {formatDate(user.created_at)}
+              {user.invited_by_name && ` · Invited by ${user.invited_by_name}`}
+              {` · ${userSessions.length} session${userSessions.length === 1 ? "" : "s"}`}
+              {latestSession && ` · Last active ${timeAgo(latestSession.started_at)}`}
+            </span>
           </div>
         </div>
         <button
@@ -340,76 +591,130 @@ function UserJourney({ data, userId, onSelectSession, onDeleteUser }) {
         </button>
       </div>
 
-      <div className="va-grid">
-        <div>
-          <div style={S.sectionTitle}>Sessions</div>
-          {userSessions.length === 0 && <div style={S.empty}>No sessions yet</div>}
-          {userSessions.map((s) => (
-            <SessionCard key={s.id} session={s} data={data} onClick={() => onSelectSession(s.id)} />
-          ))}
-        </div>
+      {/* ── Relationship with Angelica ── */}
+      {(latestScore || essentialTruth || latestCQ) && (
+        <div style={{ marginBottom: 28 }}>
+          <div style={S.sectionTitle}>Relationship with Angelica</div>
 
-        <div>
-          <div style={S.sectionTitle}>Portrait so far</div>
-
-          {userEssentialTruth?.text && (
-            <div style={S.portraitSection}>
-              <div style={S.portraitLabel}>Essential truth</div>
-              <div style={{ fontSize: 13, fontStyle: "italic", lineHeight: 1.5, color: "#e0ddd8" }}>"{userEssentialTruth.text}"</div>
-              <div style={{ fontSize: 10, color: "#666", marginTop: 4 }}>Confidence: {userEssentialTruth.confidence}/5</div>
-            </div>
-          )}
-
-          {userActiveHypotheses.length > 0 && (
-            <div style={S.portraitSection}>
-              <div style={S.portraitLabel}>Active hypotheses ({userActiveHypotheses.length})</div>
-              {userActiveHypotheses.slice(0, 5).map((h) => (
-                <div key={h.id} style={S.hypothesisChip}>{h.text}</div>
-              ))}
-            </div>
-          )}
-
-          {userResolvedHypotheses.length > 0 && (
-            <div style={S.portraitSection}>
-              <div style={S.portraitLabel}>Resolved ({userResolvedHypotheses.length})</div>
-              {userResolvedHypotheses.slice(0, 3).map((h) => (
-                <div key={h.id} style={{ ...S.hypothesisChip, opacity: 0.7 }}>
-                  <span style={{ color: h.status === "confirmed" ? "#7cb87c" : h.status === "discarded" ? "#E24B4A" : "#d4a84a", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em", marginRight: 6 }}>
-                    {h.status}
-                  </span>
-                  {h.text}
+          {latestScore && (
+            <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 16 }}>
+              {[
+                ["Trust", latestScore.trust_score],
+                ["Depth", latestScore.depth_score],
+                ["Readiness", latestScore.readiness_score],
+                ["Self-knowledge gap", latestScore.self_knowledge_gap],
+                ["Emotional availability", latestScore.emotional_availability],
+              ].map(([label, val]) => val != null && (
+                <div key={label} style={{ flex: "1 1 150px", minWidth: 130 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#888", marginBottom: 4 }}>
+                    <span>{label}</span><span style={{ fontWeight: 500, color: "#e0ddd8" }}>{val}/10</span>
+                  </div>
+                  <div style={{ height: 3, background: "#2a2a2a", borderRadius: 2 }}>
+                    <div style={{ height: "100%", width: `${val * 10}%`, background: "#C4A08A", borderRadius: 2 }} />
+                  </div>
                 </div>
               ))}
             </div>
           )}
 
-          {userTopDimensions.length > 0 && (
-            <div style={S.portraitSection}>
-              <div style={S.portraitLabel}>Most resolved dimensions</div>
-              {userTopDimensions.map((d) => (
-                <div key={d.id} style={S.dimRow}>
-                  <span style={{ fontSize: 11 }}>{d.dimension_name}</span>
-                  <span style={{ fontSize: 10, color: "#888" }}>{d.resolution} · w{d.weight}</span>
-                </div>
-              ))}
+          {essentialTruth?.text && (
+            <div style={{ padding: "12px 16px", background: "#1e1e1e", borderRadius: 6, borderLeft: "3px solid #C4A08A", marginBottom: 14 }}>
+              <div style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
+                Essential truth · confidence {essentialTruth.confidence}/5
+              </div>
+              <div style={{ fontSize: 13, fontStyle: "italic", color: "#e0ddd8", lineHeight: 1.6 }}>"{essentialTruth.text}"</div>
             </div>
           )}
 
-          {userSilences.length > 0 && (
-            <div style={S.portraitSection}>
-              <div style={S.portraitLabel}>Silences</div>
-              {userSilences.slice(0, 5).map((s) => (
-                <div key={s.id} style={S.dimRow}>
-                  <span style={{ fontSize: 11 }}>{s.topic}</span>
-                  <span style={{ fontSize: 10, color: "#888" }}>absent {s.sessions_absent}</span>
+          {latestCQ && (
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {[
+                ["Honesty", latestCQ.honesty],
+                ["Safety", latestCQ.safety],
+                ["Trust", latestCQ.trust],
+                ["Investment", latestCQ.investment],
+                ["Momentum", latestCQ.momentum],
+                ["Depth signal", latestCQ.depth_signal],
+                ["Return signal", latestCQ.return_signal],
+                ["Goal aliveness", latestCQ.goal_aliveness],
+              ].map(([label, val]) => val != null && (
+                <div key={label} style={{
+                  fontSize: 11, padding: "4px 10px", background: "#1e1e1e", borderRadius: 12,
+                  border: "1px solid #2a2a2a",
+                  color: val >= 7 ? "#7cb87c" : val <= 3 ? "#E24B4A" : "#aaa",
+                }}>
+                  {label} <strong>{val}</strong>
                 </div>
               ))}
             </div>
           )}
         </div>
+      )}
+
+      {/* ── Portrait + Silences grid ── */}
+      {(activeHypotheses.length > 0 || resolvedHypotheses.length > 0 || silences.length > 0 || topDimensions.length > 0) && (
+        <div className="va-grid" style={{ marginBottom: 28 }}>
+          <div>
+            {activeHypotheses.length > 0 && (
+              <div style={S.portraitSection}>
+                <div style={S.sectionTitle}>Active hypotheses ({activeHypotheses.length})</div>
+                {activeHypotheses.map((h) => (
+                  <div key={h.id} style={S.hypothesisChip}>{h.text}</div>
+                ))}
+              </div>
+            )}
+            {silences.length > 0 && (
+              <div style={S.portraitSection}>
+                <div style={S.sectionTitle}>Silences</div>
+                {silences.slice(0, 6).map((s) => (
+                  <div key={s.id} style={S.dimRow}>
+                    <span style={{ fontSize: 11 }}>{s.topic}</span>
+                    <span style={{ fontSize: 10, color: "#888" }}>absent {s.sessions_absent}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {resolvedHypotheses.length > 0 && (
+              <div style={S.portraitSection}>
+                <div style={S.sectionTitle}>Resolved hypotheses ({resolvedHypotheses.length})</div>
+                {resolvedHypotheses.slice(0, 4).map((h) => (
+                  <div key={h.id} style={{ ...S.hypothesisChip, opacity: 0.7 }}>
+                    <span style={{ color: h.status === "confirmed" ? "#7cb87c" : h.status === "discarded" ? "#E24B4A" : "#d4a84a", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em", marginRight: 6 }}>
+                      {h.status}
+                    </span>
+                    {h.text}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div>
+            {topDimensions.length > 0 && (
+              <div style={S.portraitSection}>
+                <div style={S.sectionTitle}>Portrait dimensions</div>
+                {topDimensions.map((d) => (
+                  <div key={d.id} style={S.dimRow}>
+                    <span style={{ fontSize: 11 }}>{d.dimension_name}</span>
+                    <span style={{ fontSize: 10, color: "#888" }}>{d.resolution} · w{d.weight}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Conversations ── */}
+      <div>
+        <div style={S.sectionTitle}>Conversations ({userSessions.length})</div>
+        {userSessions.length === 0 && <div style={S.empty}>No conversations yet</div>}
+        {userSessions.map((s) => (
+          <SessionCard key={s.id} session={s} data={data} onClick={() => onSelectSession(s.id)} />
+        ))}
       </div>
 
-
+      {/* ── Delete modal ── */}
       {showDeleteConfirm && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}>
           <div style={{ background: "#1a1a1a", border: "1px solid #3a2020", borderRadius: 8, padding: 32, maxWidth: 400, width: "90%" }}>
@@ -419,22 +724,15 @@ function UserJourney({ data, userId, onSelectSession, onDeleteUser }) {
             </div>
             {deleteError && <div style={{ fontSize: 12, color: "#E24B4A", marginBottom: 12 }}>{deleteError}</div>}
             <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
-              <button
-                onClick={() => setShowDeleteConfirm(false)}
-                disabled={deleting}
-                style={{ fontSize: 13, color: "#aaa", background: "none", border: "1px solid #333", borderRadius: 4, padding: "8px 18px", cursor: "pointer" }}
-              >
+              <button onClick={() => setShowDeleteConfirm(false)} disabled={deleting}
+                style={{ fontSize: 13, color: "#aaa", background: "none", border: "1px solid #333", borderRadius: 4, padding: "8px 18px", cursor: "pointer" }}>
                 Cancel
               </button>
               <button
                 onClick={async () => {
                   setDeleting(true);
-                  try {
-                    await onDeleteUser(userId);
-                  } catch (e) {
-                    setDeleteError(e.message);
-                    setDeleting(false);
-                  }
+                  try { await onDeleteUser(userId); }
+                  catch (e) { setDeleteError(e.message); setDeleting(false); }
                 }}
                 disabled={deleting}
                 style={{ fontSize: 13, color: "#fff", background: "#7a1a1a", border: "none", borderRadius: 4, padding: "8px 18px", cursor: deleting ? "not-allowed" : "pointer", opacity: deleting ? 0.6 : 1 }}
@@ -765,6 +1063,62 @@ function SessionAnalysis({ data, userId, sessionId }) {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// --- Conversations list ----------------------------------------------
+
+function ConversationsList({ data, onSelectSession }) {
+  const rows = useMemo(() => data.sessions.map((s) => {
+    const user = data.users.find((u) => u.id === s.user_id);
+    const msgs = data.messages.filter((m) => m.session_id === s.id);
+    const sessionScores = data.scores.filter((sc) => sc.session_id === s.id).sort((a, b) => new Date(b.measured_at) - new Date(a.measured_at));
+    const latestScore = sessionScores[0];
+    return {
+      id: s.id,
+      userId: s.user_id,
+      userName: user?.display_name || user?.id.slice(0, 8) || "Unknown",
+      sessionNumber: s.session_number,
+      phase: s.phase,
+      startedAt: s.started_at,
+      mins: durationMin(s.started_at, s.ended_at),
+      turns: msgs.length,
+      trust: latestScore?.trust_score,
+      depth: latestScore?.depth_score,
+      readiness: latestScore?.readiness_score,
+    };
+  }).sort((a, b) => new Date(b.startedAt) - new Date(a.startedAt)), [data]);
+
+  return (
+    <div style={{ padding: "20px 24px" }}>
+      <div style={S.tableWrap}>
+        <div style={{ ...S.tableRow, ...S.tableHead }}>
+          <div style={{ flex: 2 }}>User</div>
+          <div style={{ flex: 0.6, textAlign: "center" }}>Session</div>
+          <div style={{ flex: 1 }}>Phase</div>
+          <div style={{ flex: 1.2 }}>Date</div>
+          <div style={{ flex: 1 }}>Duration</div>
+          <div style={{ flex: 0.8, textAlign: "right" }}>Turns</div>
+          <div style={{ flex: 1, textAlign: "right" }}>Trust</div>
+          <div style={{ flex: 1, textAlign: "right" }}>Depth</div>
+          <div style={{ flex: 1, textAlign: "right" }}>Readiness</div>
+        </div>
+        {rows.map((r) => (
+          <div key={r.id} style={S.tableRow} onClick={() => onSelectSession(r.id, r.userId)} className="va-row">
+            <div style={{ flex: 2, fontWeight: 500 }}>{r.userName}</div>
+            <div style={{ flex: 0.6, textAlign: "center", color: "#888" }}>#{r.sessionNumber}</div>
+            <div style={{ flex: 1, color: "#C4A08A", fontSize: 12, textTransform: "capitalize" }}>{r.phase || "—"}</div>
+            <div style={{ flex: 1.2, color: "#aaa", fontSize: 12 }}>{formatDate(r.startedAt)}</div>
+            <div style={{ flex: 1, color: "#aaa", fontSize: 12 }}>{r.mins != null ? `${r.mins}m` : "—"}</div>
+            <div style={{ flex: 0.8, textAlign: "right", fontWeight: 500 }}>{r.turns || "—"}</div>
+            <div style={{ flex: 1, textAlign: "right", fontSize: 12, color: "#aaa" }}>{r.trust != null ? `${r.trust}/10` : "—"}</div>
+            <div style={{ flex: 1, textAlign: "right", fontSize: 12, color: "#aaa" }}>{r.depth != null ? `${r.depth}/10` : "—"}</div>
+            <div style={{ flex: 1, textAlign: "right", fontSize: 12, color: "#aaa" }}>{r.readiness != null ? `${r.readiness}/10` : "—"}</div>
+          </div>
+        ))}
+      </div>
+      <style>{`.va-row:hover { background: #262626 !important; }`}</style>
     </div>
   );
 }
