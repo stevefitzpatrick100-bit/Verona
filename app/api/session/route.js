@@ -23,6 +23,23 @@ export async function POST(req) {
       .eq("id", userId)
       .single();
 
+    // Check if there is a recent session within the 4-hour continuation window
+    const FOUR_HOURS_MS = 4 * 60 * 60 * 1000;
+    const { data: recentSessions } = await supabase
+      .from("sessions")
+      .select("*")
+      .eq("user_id", userId)
+      .order("started_at", { ascending: false })
+      .limit(1);
+
+    const lastSession = recentSessions?.[0];
+    const lastActivity = lastSession?.ended_at || lastSession?.started_at;
+
+    if (lastSession && lastActivity && (Date.now() - new Date(lastActivity).getTime()) < FOUR_HOURS_MS) {
+      // Resume the existing session — not a new session
+      return Response.json({ session: lastSession, isFirstSession: false });
+    }
+
     // Count existing sessions to determine session_number
     const { count } = await supabase
       .from("sessions")

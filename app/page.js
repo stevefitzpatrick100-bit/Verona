@@ -279,7 +279,8 @@ export default function Home() {
             <div style={S.meta}>always here</div>
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <span style={{ fontSize: 11, color: "#C4A08A", opacity: 0.5, letterSpacing: "0.06em" }}>v2</span>
         </div>
       </div>
 

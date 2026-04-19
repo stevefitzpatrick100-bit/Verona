@@ -27,7 +27,7 @@ export async function POST(req) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { name, inviter_name } = await req.json();
+  const { name, inviter_name, environment, prompt_version_id } = await req.json();
   if (!name) return Response.json({ error: "Name is required" }, { status: 400 });
 
   const supabase = getSupabaseServer();
@@ -40,7 +40,60 @@ export async function POST(req) {
 
   const { data, error } = await supabase
     .from("invites")
-    .insert({ token, name, inviter_name: inviter_name || null })
+    .insert({
+      token,
+      name,
+      inviter_name: inviter_name || null,
+      environment: environment || "prod",
+      prompt_version_id: prompt_version_id || null,
+    })
+    .select()
+    .single();
+
+  if (error) return Response.json({ error: error.message }, { status: 500 });
+  return Response.json({ invite: data });
+}
+
+// PATCH: reinvite — create a new unused invite linked to same user
+// Body: { id } (the id of the used invite to reinvite)
+export async function PATCH(req) {
+  const auth = req.headers.get("authorization");
+  if (auth !== process.env.ADMIN_PASSWORD) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { id } = await req.json();
+  if (!id) return Response.json({ error: "ID required" }, { status: 400 });
+
+  const supabase = getSupabaseServer();
+
+  // Fetch the original invite
+  const { data: original, error: fetchErr } = await supabase
+    .from("invites")
+    .select("*")
+    .eq("id", id)
+    .single();
+
+  if (fetchErr || !original) {
+    return Response.json({ error: "Invite not found" }, { status: 404 });
+  }
+
+  // Generate a new token
+  const token = Array.from(crypto.getRandomValues(new Uint8Array(6)))
+    .map((b) => b.toString(36).padStart(2, "0"))
+    .join("")
+    .slice(0, 8);
+
+  // Create new invite pre-linked to the same user
+  const { data, error } = await supabase
+    .from("invites")
+    .insert({
+      token,
+      name: original.name,
+      inviter_name: original.inviter_name,
+      user_id: original.user_id,
+      used_at: null,
+    })
     .select()
     .single();
 

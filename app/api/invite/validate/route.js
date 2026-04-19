@@ -20,9 +20,18 @@ export async function POST(req) {
     return Response.json({ error: "Invalid invite" }, { status: 404 });
   }
 
-  // If already used, return the existing user_id
-  if (invite.user_id) {
+  // Reinvite: user_id is set but used_at is null — let them back in
+  if (invite.user_id && !invite.used_at) {
+    await supabase
+      .from("invites")
+      .update({ used_at: new Date().toISOString() })
+      .eq("id", invite.id);
     return Response.json({ userId: invite.user_id, name: invite.name });
+  }
+
+  // Single-use: if already fully claimed, reject
+  if (invite.user_id) {
+    return Response.json({ error: "This invite has already been used" }, { status: 403 });
   }
 
   // First use — create a user and link it
@@ -32,6 +41,7 @@ export async function POST(req) {
       id: userId,
       display_name: invite.name,
       invited_by_name: invite.inviter_name || null,
+      prompt_version_id: invite.prompt_version_id || null,
     },
     { onConflict: "id", ignoreDuplicates: true }
   );

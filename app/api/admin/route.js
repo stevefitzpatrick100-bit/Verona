@@ -22,6 +22,7 @@ export async function GET(req) {
       { data: territory },
       { data: essentialTruth },
       { data: invites },
+      { data: cq },
     ] = await Promise.all([
       supabase.from("users").select("*").order("created_at", { ascending: false }),
       supabase.from("sessions").select("*").order("started_at", { ascending: false }),
@@ -35,6 +36,7 @@ export async function GET(req) {
       supabase.from("territory_map").select("*").gt("depth", 0),
       supabase.from("essential_truth").select("*"),
       supabase.from("invites").select("*").order("created_at", { ascending: false }),
+      supabase.from("cq_dimensions").select("*").order("measured_at", { ascending: false }),
     ]);
 
     return Response.json({
@@ -50,8 +52,30 @@ export async function GET(req) {
       territory: territory || [],
       essentialTruth: essentialTruth || [],
       invites: invites || [],
+      cq: cq || [],
     });
   } catch (e) {
     return Response.json({ error: e.message }, { status: 500 });
   }
+}
+
+export async function DELETE(req) {
+  const auth = req.headers.get("authorization");
+  if (auth !== process.env.ADMIN_PASSWORD) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { userId } = await req.json();
+  if (!userId) return Response.json({ error: "userId required" }, { status: 400 });
+
+  const supabase = getSupabaseServer();
+
+  // Clear the invite link so the token can't be reused to recreate the user
+  await supabase.from("invites").update({ user_id: null, used_at: null }).eq("user_id", userId);
+
+  // Delete the user — cascades to all sessions, messages, scores, dimensions, etc.
+  const { error } = await supabase.from("users").delete().eq("id", userId);
+  if (error) return Response.json({ error: error.message }, { status: 500 });
+
+  return Response.json({ ok: true });
 }

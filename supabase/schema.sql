@@ -457,6 +457,8 @@ create table invites (
   token text unique not null,
   name text not null,
   inviter_name text,
+  environment text default 'prod',
+  prompt_version_id uuid references prompt_versions(id) on delete set null,
   user_id uuid references users(id) on delete set null,
   used_at timestamptz,
   created_at timestamptz default now()
