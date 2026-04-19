@@ -1157,7 +1157,7 @@ function ConversationsList({ data, onSelectSession }) {
 // --- Invites ---------------------------------------------------------
 
 function Invites({ invites, newInviteName, setNewInviteName, newInviterName, setNewInviterName, newInviteEnv, setNewInviteEnv, newInviteVersionId, setNewInviteVersionId, promptVersions, createInvite, deleteInvite, reinvite }) {
-  const ENV_HOSTS = { prod: "https://verona-ai.app", dev: "http://localhost:3000" };
+  const ENV_HOSTS = { prod: "https://verona-demo.vercel.app", dev: "http://localhost:3000" };
   function inviteUrl(inv) {
     const base = ENV_HOSTS[inv.environment] || ENV_HOSTS.prod;
     return `${base}/?invite=${inv.token}`;
