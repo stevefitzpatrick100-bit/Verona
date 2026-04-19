@@ -54,6 +54,9 @@ export default function Admin() {
   const [selectedSessionId, setSelectedSessionId] = useState(null);
   const [newInviteName, setNewInviteName] = useState("");
   const [newInviterName, setNewInviterName] = useState("");
+  const [newInviteEnv, setNewInviteEnv] = useState("prod");
+  const [newInviteVersionId, setNewInviteVersionId] = useState("");
+  const [promptVersions, setPromptVersions] = useState([]);
 
   useEffect(() => {
     const saved = sessionStorage.getItem("admin-pw");
@@ -75,7 +78,16 @@ export default function Admin() {
     } catch (e) { setError(e.message); }
   }, []);
 
-  useEffect(() => { if (authed) fetchData(); }, [authed, fetchData]);
+  useEffect(() => {
+    if (authed) {
+      fetchData();
+      // Fetch prompt versions for the invite dropdown
+      fetch("/api/prompts", { headers: { authorization: sessionStorage.getItem("admin-pw") } })
+        .then((r) => r.json())
+        .then((d) => { if (d.versions) setPromptVersions(d.versions); })
+        .catch(() => {});
+    }
+  }, [authed, fetchData]);
 
   async function createInvite() {
     if (!newInviteName.trim()) return;
@@ -86,10 +98,14 @@ export default function Admin() {
       body: JSON.stringify({
         name: newInviteName.trim(),
         inviter_name: newInviterName.trim() || null,
+        environment: newInviteEnv,
+        prompt_version_id: newInviteVersionId || null,
       }),
     });
     setNewInviteName("");
     setNewInviterName("");
+    setNewInviteEnv("prod");
+    setNewInviteVersionId("");
     fetchData();
   }
   async function deleteInvite(id) {
@@ -240,6 +256,11 @@ export default function Admin() {
           setNewInviteName={setNewInviteName}
           newInviterName={newInviterName}
           setNewInviterName={setNewInviterName}
+          newInviteEnv={newInviteEnv}
+          setNewInviteEnv={setNewInviteEnv}
+          newInviteVersionId={newInviteVersionId}
+          setNewInviteVersionId={setNewInviteVersionId}
+          promptVersions={promptVersions}
           createInvite={createInvite}
           deleteInvite={deleteInvite}
           reinvite={reinvite}
@@ -1135,12 +1156,18 @@ function ConversationsList({ data, onSelectSession }) {
 
 // --- Invites ---------------------------------------------------------
 
-function Invites({ invites, newInviteName, setNewInviteName, newInviterName, setNewInviterName, createInvite, deleteInvite, reinvite }) {
+function Invites({ invites, newInviteName, setNewInviteName, newInviterName, setNewInviterName, newInviteEnv, setNewInviteEnv, newInviteVersionId, setNewInviteVersionId, promptVersions, createInvite, deleteInvite, reinvite }) {
+  const ENV_HOSTS = { prod: "https://verona-ai.app", dev: "http://localhost:3000" };
+  function inviteUrl(inv) {
+    const base = ENV_HOSTS[inv.environment] || ENV_HOSTS.prod;
+    return `${base}/?invite=${inv.token}`;
+  }
+
   return (
     <div style={{ padding: "20px 24px", maxWidth: 900 }}>
       <div style={S.sectionTitle}>Invites</div>
 
-      <div style={{ marginBottom: 20, maxWidth: 600 }}>
+      <div style={{ marginBottom: 20, maxWidth: 700 }}>
         <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
           <input
             value={newInviteName}
@@ -1151,43 +1178,72 @@ function Invites({ invites, newInviteName, setNewInviteName, newInviterName, set
           <input
             value={newInviterName}
             onChange={(e) => setNewInviterName(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && createInvite()}
             placeholder="Who's introducing them (e.g. Sarah)"
             style={S.input}
           />
+        </div>
+        <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+          <select
+            value={newInviteEnv}
+            onChange={(e) => setNewInviteEnv(e.target.value)}
+            style={{ ...S.input, width: 120, flex: "none" }}
+          >
+            <option value="prod">Prod</option>
+            <option value="dev">Dev</option>
+          </select>
+          <select
+            value={newInviteVersionId}
+            onChange={(e) => setNewInviteVersionId(e.target.value)}
+            style={{ ...S.input, flex: 1 }}
+          >
+            <option value="">Active prompt (default)</option>
+            {promptVersions.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.label || `v${v.version_number}`}{v.is_active ? " ★" : ""}
+              </option>
+            ))}
+          </select>
           <button onClick={createInvite} style={{ ...S.btn, whiteSpace: "nowrap" }}>Create invite</button>
         </div>
         <div style={{ fontSize: 11, color: "#888" }}>
-          Angelica uses both names in her opening message. Introducer is optional — if blank, Angelica will just greet the invitee by name.
+          Angelica uses both names in her opening message. Introducer is optional. Prompt version pins this user to a specific Angelica version.
         </div>
       </div>
 
       {invites.length === 0 && <div style={S.empty}>No invites yet</div>}
-      {invites.map((inv) => (
-        <div key={inv.id} style={S.inviteRow}>
-          <div style={{ minWidth: 140 }}>
-            <span style={{ fontWeight: 500 }}>{inv.name}</span>
-            {inv.inviter_name && <span style={{ color: "#888", fontSize: 11 }}> · from {inv.inviter_name}</span>}
-            <div style={{ color: inv.used_at ? "#7cb87c" : "#888", fontSize: 11, marginTop: 2 }}>
-              {inv.used_at ? `Used ${timeAgo(inv.used_at)}` : "Not used"}
+      {invites.map((inv) => {
+        const url = inviteUrl(inv);
+        const envLabel = inv.environment === "dev" ? "DEV" : "PROD";
+        const envColor = inv.environment === "dev" ? "#6B9BD2" : "#C4A08A";
+        return (
+          <div key={inv.id} style={S.inviteRow}>
+            <div style={{ minWidth: 160 }}>
+              <span style={{ fontWeight: 500 }}>{inv.name}</span>
+              {inv.inviter_name && <span style={{ color: "#888", fontSize: 11 }}> · from {inv.inviter_name}</span>}
+              <div style={{ fontSize: 11, marginTop: 2, display: "flex", gap: 6, alignItems: "center" }}>
+                <span style={{ color: envColor, fontWeight: 600, fontSize: 10, letterSpacing: "0.05em" }}>{envLabel}</span>
+                <span style={{ color: inv.used_at ? "#7cb87c" : "#888" }}>
+                  {inv.used_at ? `Used ${timeAgo(inv.used_at)}` : "Not used"}
+                </span>
+              </div>
             </div>
+            <input
+              readOnly
+              value={url}
+              style={{ ...S.input, flex: 1, fontSize: 11 }}
+              onClick={(e) => { e.target.select(); navigator.clipboard.writeText(e.target.value); }}
+            />
+            <button
+              onClick={() => navigator.clipboard.writeText(url)}
+              style={{ ...S.btn, fontSize: 11 }}
+            >Copy</button>
+            {inv.used_at && (
+              <button onClick={() => reinvite(inv.id)} style={{ ...S.btn, fontSize: 11, background: "#2a3a2a", color: "#7cb87c" }}>Reinvite</button>
+            )}
+            <button onClick={() => deleteInvite(inv.id)} style={{ ...S.btn, background: "#433", color: "#E24B4A", fontSize: 11 }}>Delete</button>
           </div>
-          <input
-            readOnly
-            value={`${window.location.origin}/?invite=${inv.token}`}
-            style={{ ...S.input, flex: 1, fontSize: 11 }}
-            onClick={(e) => { e.target.select(); navigator.clipboard.writeText(e.target.value); }}
-          />
-          <button
-            onClick={() => navigator.clipboard.writeText(`${window.location.origin}/?invite=${inv.token}`)}
-            style={{ ...S.btn, fontSize: 11 }}
-          >Copy</button>
-          {inv.used_at && (
-            <button onClick={() => reinvite(inv.id)} style={{ ...S.btn, fontSize: 11, background: "#2a3a2a", color: "#7cb87c" }}>Reinvite</button>
-          )}
-          <button onClick={() => deleteInvite(inv.id)} style={{ ...S.btn, background: "#433", color: "#E24B4A", fontSize: 11 }}>Delete</button>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

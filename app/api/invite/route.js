@@ -27,7 +27,7 @@ export async function POST(req) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { name, inviter_name } = await req.json();
+  const { name, inviter_name, environment, prompt_version_id } = await req.json();
   if (!name) return Response.json({ error: "Name is required" }, { status: 400 });
 
   const supabase = getSupabaseServer();
@@ -40,7 +40,13 @@ export async function POST(req) {
 
   const { data, error } = await supabase
     .from("invites")
-    .insert({ token, name, inviter_name: inviter_name || null })
+    .insert({
+      token,
+      name,
+      inviter_name: inviter_name || null,
+      environment: environment || "prod",
+      prompt_version_id: prompt_version_id || null,
+    })
     .select()
     .single();
 

@@ -41,6 +41,7 @@ export async function POST(req) {
       id: userId,
       display_name: invite.name,
       invited_by_name: invite.inviter_name || null,
+      prompt_version_id: invite.prompt_version_id || null,
     },
     { onConflict: "id", ignoreDuplicates: true }
   );

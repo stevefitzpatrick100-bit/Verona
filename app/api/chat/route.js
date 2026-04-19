@@ -8,7 +8,18 @@ let _promptCache = null;
 let _promptCachedAt = 0;
 const PROMPT_CACHE_TTL_MS = 60_000;
 
-async function getActiveAngelicaPrompt(supabase) {
+async function getActiveAngelicaPrompt(supabase, userPromptVersionId) {
+  // If the user has a specific prompt version assigned (via invite), use that
+  if (userPromptVersionId) {
+    const { data } = await supabase
+      .from("prompt_versions")
+      .select("content")
+      .eq("id", userPromptVersionId)
+      .single();
+    if (data?.content) return data.content;
+  }
+
+  // Otherwise use the globally active prompt (cached)
   const now = Date.now();
   if (_promptCache && now - _promptCachedAt < PROMPT_CACHE_TTL_MS) return _promptCache;
 
@@ -38,6 +49,13 @@ export async function POST(req) {
     // Build portrait context from database
     const portraitContext = await buildPortraitContext(supabase, userId);
 
+    // Check if user has a specific prompt version assigned
+    const { data: userData } = await supabase
+      .from("users")
+      .select("prompt_version_id")
+      .eq("id", userId)
+      .single();
+
     // Get current session number
     const { count } = await supabase
       .from("sessions")
@@ -46,7 +64,7 @@ export async function POST(req) {
     const sessionNumber = count || 1;
 
     // Build full system prompt with portrait context
-    const activePrompt = await getActiveAngelicaPrompt(supabase);
+    const activePrompt = await getActiveAngelicaPrompt(supabase, userData?.prompt_version_id);
     const systemPrompt = activePrompt + "\n\n## Portrait & Memory\n\n" + portraitContext;
 
     // Call Anthropic API for conversation
