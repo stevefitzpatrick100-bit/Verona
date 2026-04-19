@@ -264,6 +264,7 @@ function Prompts() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
   const [activatingId, setActivatingId] = useState(null);
+  const [selectedVersion, setSelectedVersion] = useState(null);
 
   const pw = () => sessionStorage.getItem("admin-pw");
 
@@ -280,7 +281,33 @@ function Prompts() {
   useEffect(() => { load(); }, []);
 
   const activeVersion = versions.find((v) => v.is_active);
-  const isDirty = editContent !== (activeVersion?.content || "");
+  const isDirty = selectedVersion ? editContent !== (selectedVersion.content || "") : editContent !== (activeVersion?.content || "");
+
+  function nextRevisionLabel(baseLabel) {
+    const revisionPattern = new RegExp(`^${baseLabel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\.(\\d+)$`);
+    let maxRev = 0;
+    for (const v of versions) {
+      const m = v.label.match(revisionPattern);
+      if (m) maxRev = Math.max(maxRev, parseInt(m[1], 10));
+    }
+    return `${baseLabel}.${maxRev + 1}`;
+  }
+
+  async function saveRevision() {
+    if (!selectedVersion || !isDirty) return;
+    setSaving(true); setSaveError(null);
+    const revLabel = nextRevisionLabel(selectedVersion.label.replace(/\.\d+$/, ""));
+    const res = await fetch("/api/prompts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", authorization: pw() },
+      body: JSON.stringify({ content: editContent, label: revLabel, notes: `Revision of ${selectedVersion.label}`, key: "angelica" }),
+    });
+    const json = await res.json();
+    if (json.error) { setSaveError(json.error); setSaving(false); return; }
+    setSelectedVersion(null);
+    await load();
+    setSaving(false);
+  }
 
   async function saveNewVersion() {
     if (!editLabel.trim()) { setSaveError("Give this version a label before saving"); return; }
@@ -317,8 +344,6 @@ function Prompts() {
     });
     await load();
   }
-
-  const [selectedVersion, setSelectedVersion] = useState(null);
 
   // When versions load, select the active one
   useEffect(() => {
@@ -479,9 +504,18 @@ function Prompts() {
               resize: "vertical", boxSizing: "border-box", outline: "none",
             }}
           />
-          <div style={{ fontSize: 11, color: "#555", marginTop: 4 }}>
-            {editContent.length.toLocaleString()} chars · {editContent.split("\n").length} lines
-            {isDirty && <span style={{ color: "#d4a84a", marginLeft: 12 }}>● Unsaved changes</span>}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 4 }}>
+            <div style={{ fontSize: 11, color: "#555" }}>
+              {editContent.length.toLocaleString()} chars · {editContent.split("\n").length} lines
+              {isDirty && <span style={{ color: "#d4a84a", marginLeft: 12 }}>● Unsaved changes</span>}
+            </div>
+            {isDirty && selectedVersion && (
+              <button
+                onClick={saveRevision}
+                disabled={saving}
+                style={{ fontSize: 11, color: "#C4A08A", background: "none", border: "1px solid #3a3020", borderRadius: 4, padding: "4px 14px", cursor: "pointer", opacity: saving ? 0.4 : 1 }}
+              >{saving ? "Saving…" : `Save as ${nextRevisionLabel(selectedVersion.label.replace(/\.\d+$/, ""))}`}</button>
+            )}
           </div>
         </div>
       </div>
