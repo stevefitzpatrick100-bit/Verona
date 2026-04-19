@@ -101,6 +101,15 @@ export default function Admin() {
     });
     fetchData();
   }
+  async function reinvite(id) {
+    const pw = sessionStorage.getItem("admin-pw");
+    await fetch("/api/invite", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", authorization: pw },
+      body: JSON.stringify({ id }),
+    });
+    fetchData();
+  }
 
   function switchTab(newTab) {
     setTab(newTab);
@@ -233,6 +242,7 @@ export default function Admin() {
           setNewInviterName={setNewInviterName}
           createInvite={createInvite}
           deleteInvite={deleteInvite}
+          reinvite={reinvite}
         />
       )}
 
@@ -1125,7 +1135,7 @@ function ConversationsList({ data, onSelectSession }) {
 
 // --- Invites ---------------------------------------------------------
 
-function Invites({ invites, newInviteName, setNewInviteName, newInviterName, setNewInviterName, createInvite, deleteInvite }) {
+function Invites({ invites, newInviteName, setNewInviteName, newInviterName, setNewInviterName, createInvite, deleteInvite, reinvite }) {
   return (
     <div style={{ padding: "20px 24px", maxWidth: 900 }}>
       <div style={S.sectionTitle}>Invites</div>
@@ -1172,6 +1182,9 @@ function Invites({ invites, newInviteName, setNewInviteName, newInviterName, set
             onClick={() => navigator.clipboard.writeText(`${window.location.origin}/?invite=${inv.token}`)}
             style={{ ...S.btn, fontSize: 11 }}
           >Copy</button>
+          {inv.used_at && (
+            <button onClick={() => reinvite(inv.id)} style={{ ...S.btn, fontSize: 11, background: "#2a3a2a", color: "#7cb87c" }}>Reinvite</button>
+          )}
           <button onClick={() => deleteInvite(inv.id)} style={{ ...S.btn, background: "#433", color: "#E24B4A", fontSize: 11 }}>Delete</button>
         </div>
       ))}
