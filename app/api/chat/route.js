@@ -13,10 +13,10 @@ async function getActiveAngelicaPrompt(supabase, userPromptVersionId) {
   if (userPromptVersionId) {
     const { data } = await supabase
       .from("prompt_versions")
-      .select("content")
+      .select("content, label")
       .eq("id", userPromptVersionId)
       .single();
-    if (data?.content) return data.content;
+    if (data?.content) return { content: data.content, label: data.label || "pinned" };
   }
 
   // Otherwise use the globally active prompt (cached)
@@ -25,15 +25,15 @@ async function getActiveAngelicaPrompt(supabase, userPromptVersionId) {
 
   const { data } = await supabase
     .from("prompt_versions")
-    .select("content")
+    .select("content, label")
     .eq("prompt_key", "angelica")
     .eq("is_active", true)
     .single();
 
-  const prompt = data?.content || ANGELICA_SYSTEM_PROMPT;
-  _promptCache = prompt;
+  const result = { content: data?.content || ANGELICA_SYSTEM_PROMPT, label: data?.label || "default" };
+  _promptCache = result;
   _promptCachedAt = now;
-  return prompt;
+  return result;
 }
 
 export async function POST(req) {
@@ -65,7 +65,8 @@ export async function POST(req) {
 
     // Build full system prompt with portrait context
     const activePrompt = await getActiveAngelicaPrompt(supabase, userData?.prompt_version_id);
-    const systemPrompt = activePrompt + "\n\n## Portrait & Memory\n\n" + portraitContext;
+    const systemPrompt = activePrompt.content + "\n\n## Portrait & Memory\n\n" + portraitContext;
+    const promptLabel = activePrompt.label;
 
     // Call Anthropic API for conversation
     const response = await fetch("https://api.anthropic.com/v1/messages", {
@@ -110,7 +111,7 @@ export async function POST(req) {
       (e) => console.error("Portrait analysis failed:", e)
     );
 
-    return Response.json({ text: reply });
+    return Response.json({ text: reply, promptVersion: promptLabel });
   } catch (e) {
     console.error("Chat API error:", e);
     return Response.json({ error: e.message }, { status: 500 });

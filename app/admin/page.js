@@ -263,7 +263,6 @@ function Prompts() {
   const [editNotes, setEditNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
-  const [showHistory, setShowHistory] = useState(false);
   const [activatingId, setActivatingId] = useState(null);
 
   const pw = () => sessionStorage.getItem("admin-pw");
@@ -319,121 +318,173 @@ function Prompts() {
     await load();
   }
 
+  const [selectedVersion, setSelectedVersion] = useState(null);
+
+  // When versions load, select the active one
+  useEffect(() => {
+    if (versions.length > 0 && !selectedVersion) {
+      const active = versions.find((v) => v.is_active);
+      if (active) setSelectedVersion(active);
+    }
+  }, [versions]);
+
   if (loading) return <div style={{ padding: 40, color: "#888" }}>Loading…</div>;
 
   return (
-    <div style={{ padding: "20px 24px", maxWidth: 900 }}>
+    <div style={{ padding: "20px 24px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+        <div style={S.sectionTitle}>Prompt dashboard</div>
+        <div style={{ fontSize: 11, color: "#666" }}>
+          {activeVersion
+            ? <>Live: <span style={{ color: "#7cb87c" }}>{activeVersion.label}</span> · {activeVersion.content.length.toLocaleString()} chars</>
+            : "No active prompt (using code fallback)"}
+        </div>
+      </div>
 
-      {/* ── Active version header ── */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: 24 }}>
+
+        {/* ── Left: version list ── */}
         <div>
-          <div style={S.sectionTitle}>Angelica — system prompt</div>
-          {activeVersion && (
-            <div style={{ fontSize: 11, color: "#666", marginTop: 2 }}>
-              Active: <span style={{ color: "#C4A08A" }}>{activeVersion.label}</span>
-              {activeVersion.created_at && ` · saved ${timeAgo(activeVersion.created_at)}`}
-              {activeVersion.id === null && " · from code (not yet saved to DB)"}
+          {/* ── New version upload ── */}
+          <div style={{ marginBottom: 16, borderBottom: "1px solid #2a2a2a", paddingBottom: 16 }}>
+            <div style={{ fontSize: 11, color: "#888", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
+              Add new version
             </div>
-          )}
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button
-            onClick={() => navigator.clipboard.writeText(editContent)}
-            style={{ fontSize: 12, color: "#aaa", background: "none", border: "1px solid #333", borderRadius: 4, padding: "5px 12px", cursor: "pointer" }}
-          >Copy</button>
-          <button
-            onClick={() => setShowHistory(!showHistory)}
-            style={{ fontSize: 12, color: showHistory ? "#C4A08A" : "#aaa", background: "none", border: "1px solid #333", borderRadius: 4, padding: "5px 12px", cursor: "pointer" }}
-          >History ({versions.length})</button>
-        </div>
-      </div>
-
-      {/* ── Editor ── */}
-      <textarea
-        value={editContent}
-        onChange={(e) => setEditContent(e.target.value)}
-        style={{
-          width: "100%", minHeight: 480, background: "#111", color: "#d0cdc8",
-          border: `1px solid ${isDirty ? "#5a4a1a" : "#2a2a2a"}`, borderRadius: 6, padding: 16,
-          fontSize: 12, lineHeight: 1.7, fontFamily: "monospace",
-          resize: "vertical", boxSizing: "border-box", outline: "none",
-        }}
-      />
-      <div style={{ fontSize: 11, color: "#555", marginTop: 4, marginBottom: 16 }}>
-        {editContent.length.toLocaleString()} chars · {editContent.split("\n").length} lines
-        {isDirty && <span style={{ color: "#d4a84a", marginLeft: 12 }}>● Unsaved changes</span>}
-      </div>
-
-      {/* ── Save as new version ── */}
-      {isDirty && (
-        <div style={{ background: "#1e1e1e", border: "1px solid #2a2a2a", borderRadius: 6, padding: 16, marginBottom: 24 }}>
-          <div style={{ fontSize: 12, color: "#C4A08A", marginBottom: 12, fontWeight: 500 }}>Save as new version</div>
-          <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
             <input
               value={editLabel}
               onChange={(e) => setEditLabel(e.target.value)}
-              placeholder="Version label (e.g. v2 — warmer opening)"
-              style={{ ...S.input, flex: 2 }}
+              placeholder="Label (e.g. v3 — shorter opening)"
+              style={{ ...S.input, width: "100%", marginBottom: 6 }}
             />
             <input
               value={editNotes}
               onChange={(e) => setEditNotes(e.target.value)}
-              placeholder="What changed? (optional)"
-              style={{ ...S.input, flex: 3 }}
+              placeholder="Notes (optional)"
+              style={{ ...S.input, width: "100%", marginBottom: 8 }}
             />
+            <label
+              style={{
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                width: "100%", padding: "10px 0", marginBottom: 8,
+                border: "1px dashed #3a3a3a", borderRadius: 6, cursor: "pointer",
+                fontSize: 12, color: "#888", transition: "border-color 0.15s",
+              }}
+              onDragOver={(e) => { e.preventDefault(); e.currentTarget.style.borderColor = "#C4A08A"; }}
+              onDragLeave={(e) => { e.currentTarget.style.borderColor = "#3a3a3a"; }}
+              onDrop={(e) => {
+                e.preventDefault();
+                e.currentTarget.style.borderColor = "#3a3a3a";
+                const file = e.dataTransfer.files[0];
+                if (file) {
+                  const reader = new FileReader();
+                  reader.onload = (ev) => setEditContent(ev.target.result);
+                  reader.readAsText(file);
+                }
+              }}
+            >
+              <input
+                type="file"
+                accept=".md,.txt,.text"
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  const file = e.target.files[0];
+                  if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (ev) => setEditContent(ev.target.result);
+                    reader.readAsText(file);
+                  }
+                  e.target.value = "";
+                }}
+              />
+              ↑ Upload .md / .txt file
+            </label>
+            <div style={{ fontSize: 10, color: "#555", marginBottom: 8 }}>
+              Upload a file or edit directly in the editor, then click save.
+            </div>
             <button
               onClick={saveNewVersion}
-              disabled={saving}
-              style={{ ...S.btn, whiteSpace: "nowrap", opacity: saving ? 0.6 : 1 }}
+              disabled={saving || !isDirty || !editLabel.trim()}
+              style={{ ...S.btn, width: "100%", opacity: (saving || !isDirty || !editLabel.trim()) ? 0.4 : 1 }}
             >{saving ? "Saving…" : "Save & activate"}</button>
+            {saveError && <div style={{ fontSize: 11, color: "#E24B4A", marginTop: 6 }}>{saveError}</div>}
           </div>
-          {saveError && <div style={{ fontSize: 12, color: "#E24B4A" }}>{saveError}</div>}
-        </div>
-      )}
 
-      {/* ── Version history ── */}
-      {showHistory && (
-        <div>
-          <div style={S.sectionTitle}>Version history</div>
+          <div style={{ fontSize: 11, color: "#888", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
+            Versions ({versions.length})
+          </div>
+
           {versions.map((v) => (
-            <div key={v.id || "seed"} style={{
-              background: v.is_active ? "#1e2230" : "#1a1a1a",
-              border: `1px solid ${v.is_active ? "#3a3a5a" : "#2a2a2a"}`,
-              borderRadius: 6, padding: "12px 16px", marginBottom: 8,
-            }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                <div>
-                  <span style={{ fontWeight: 500, color: v.is_active ? "#C4A08A" : "#e0ddd8" }}>{v.label}</span>
-                  {v.is_active && <span style={{ marginLeft: 8, fontSize: 10, color: "#7cb87c", textTransform: "uppercase", letterSpacing: "0.06em" }}>Active</span>}
-                  <div style={{ fontSize: 11, color: "#666", marginTop: 3 }}>
-                    {v.created_at ? timeAgo(v.created_at) : ""}
-                    {v.notes && <span style={{ marginLeft: 8, color: "#888" }}>{v.notes}</span>}
-                  </div>
-                </div>
-                <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-                  <button
-                    onClick={() => setEditContent(v.content)}
-                    style={{ fontSize: 11, color: "#aaa", background: "none", border: "1px solid #333", borderRadius: 4, padding: "4px 10px", cursor: "pointer" }}
-                  >Load into editor</button>
-                  {!v.is_active && v.id && (
-                    <button
-                      onClick={() => activateVersion(v.id)}
-                      disabled={activatingId === v.id}
-                      style={{ fontSize: 11, color: "#C4A08A", background: "none", border: "1px solid #3a3020", borderRadius: 4, padding: "4px 10px", cursor: "pointer" }}
-                    >{activatingId === v.id ? "Activating…" : "Activate"}</button>
-                  )}
-                  {!v.is_active && v.id && (
-                    <button
-                      onClick={() => deleteVersion(v.id)}
-                      style={{ fontSize: 11, color: "#E24B4A", background: "none", border: "1px solid #3a2020", borderRadius: 4, padding: "4px 10px", cursor: "pointer" }}
-                    >Delete</button>
-                  )}
-                </div>
+            <div
+              key={v.id || "seed"}
+              onClick={() => { setSelectedVersion(v); setEditContent(v.content); }}
+              style={{
+                background: selectedVersion?.id === v.id ? "#1e2230" : "#1a1a1a",
+                border: `1px solid ${v.is_active ? "#3a5a3a" : selectedVersion?.id === v.id ? "#3a3a5a" : "#2a2a2a"}`,
+                borderRadius: 6, padding: "10px 14px", marginBottom: 6, cursor: "pointer",
+                transition: "border-color 0.15s",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontWeight: 500, fontSize: 13, color: v.is_active ? "#C4A08A" : "#e0ddd8" }}>{v.label}</span>
+                {v.is_active && <span style={{ fontSize: 9, color: "#7cb87c", textTransform: "uppercase", letterSpacing: "0.06em", background: "#1a2a1a", padding: "2px 6px", borderRadius: 4 }}>Live</span>}
+              </div>
+              <div style={{ fontSize: 10, color: "#555", marginTop: 3 }}>
+                {v.created_at ? timeAgo(v.created_at) : "from code"}
+                {v.notes && <span style={{ color: "#666" }}> · {v.notes}</span>}
+              </div>
+              <div style={{ fontSize: 10, color: "#444", marginTop: 2 }}>
+                {v.content.length.toLocaleString()} chars · {v.content.split("\n").length} lines
               </div>
             </div>
           ))}
         </div>
-      )}
+
+        {/* ── Right: editor + actions ── */}
+        <div>
+          {selectedVersion && (
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <div style={{ fontSize: 13, fontWeight: 500 }}>
+                {selectedVersion.label}
+                {selectedVersion.is_active && <span style={{ marginLeft: 8, fontSize: 10, color: "#7cb87c" }}>LIVE</span>}
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  onClick={() => navigator.clipboard.writeText(editContent)}
+                  style={{ fontSize: 11, color: "#aaa", background: "none", border: "1px solid #333", borderRadius: 4, padding: "4px 10px", cursor: "pointer" }}
+                >Copy</button>
+                {!selectedVersion.is_active && selectedVersion.id && (
+                  <button
+                    onClick={() => activateVersion(selectedVersion.id)}
+                    disabled={activatingId === selectedVersion.id}
+                    style={{ fontSize: 11, color: "#C4A08A", background: "none", border: "1px solid #3a3020", borderRadius: 4, padding: "4px 10px", cursor: "pointer" }}
+                  >{activatingId === selectedVersion.id ? "Activating…" : "Make live"}</button>
+                )}
+                {!selectedVersion.is_active && selectedVersion.id && (
+                  <button
+                    onClick={() => { deleteVersion(selectedVersion.id); setSelectedVersion(null); }}
+                    style={{ fontSize: 11, color: "#E24B4A", background: "none", border: "1px solid #3a2020", borderRadius: 4, padding: "4px 10px", cursor: "pointer" }}
+                  >Delete</button>
+                )}
+              </div>
+            </div>
+          )}
+
+          <textarea
+            value={editContent}
+            onChange={(e) => setEditContent(e.target.value)}
+            style={{
+              width: "100%", minHeight: 560, background: "#111", color: "#d0cdc8",
+              border: `1px solid ${isDirty ? "#5a4a1a" : "#2a2a2a"}`, borderRadius: 6, padding: 16,
+              fontSize: 12, lineHeight: 1.7, fontFamily: "monospace",
+              resize: "vertical", boxSizing: "border-box", outline: "none",
+            }}
+          />
+          <div style={{ fontSize: 11, color: "#555", marginTop: 4 }}>
+            {editContent.length.toLocaleString()} chars · {editContent.split("\n").length} lines
+            {isDirty && <span style={{ color: "#d4a84a", marginLeft: 12 }}>● Unsaved changes</span>}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

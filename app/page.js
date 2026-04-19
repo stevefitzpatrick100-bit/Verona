@@ -9,6 +9,7 @@ export default function Home() {
   const [sessionId, setSessionId] = useState(null);
   const [portrait, setPortrait] = useState(null);
   const [showPortrait, setShowPortrait] = useState(false);
+  const [promptVersion, setPromptVersion] = useState(null);
   const [accessDenied, setAccessDenied] = useState(false);
   const [checking, setChecking] = useState(true);
   const [historyLoaded, setHistoryLoaded] = useState(false);
@@ -174,6 +175,7 @@ export default function Home() {
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
+      if (data.promptVersion) setPromptVersion(data.promptVersion);
       setMessages((prev) => [
         ...prev,
         { role: "assistant", content: data.text, created_at: new Date().toISOString() },
@@ -280,7 +282,7 @@ export default function Home() {
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <span style={{ fontSize: 11, color: "#C4A08A", opacity: 0.5, letterSpacing: "0.06em" }}>v2</span>
+          {promptVersion && <span style={{ fontSize: 11, color: "#C4A08A", opacity: 0.5, letterSpacing: "0.06em" }}>{promptVersion}</span>}
         </div>
       </div>
 
