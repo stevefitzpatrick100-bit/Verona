@@ -1338,17 +1338,24 @@ function UserOverview({ data, user, sessions, onOpenSession }) {
         }
         return (
           <>
-            <div style={{ display: "grid", gap: 10, gridTemplateColumns: "1fr 1fr 1fr" }}>
-              <SubstrateTile id="portrait" title="Portrait" dims={portrait} totalExpected={100} bd={portraitBd} />
+            <div style={{ display: "grid", gap: 10, gridTemplateColumns: "1fr 1fr 1fr 1fr" }}>
+              <SubstrateTile id="self" title="Self image" dims={portrait} totalExpected={100} bd={portraitBd} />
               <SubstrateTile id="partner" title="Partner image" dims={partner} totalExpected={50} bd={partnerBd} />
               <SubstrateTile id="relationship" title="Relationship image" dims={relationship} totalExpected={50} bd={relBd} />
+              <div
+                onClick={() => setSubstrateOpen(substrateOpen === "match_portrait" ? null : "match_portrait")}
+                style={{ ...S.card, cursor: "pointer", outline: substrateOpen === "match_portrait" ? "2px solid #a95d49" : "none", userSelect: "none", display: "flex", flexDirection: "column", justifyContent: "center" }}
+              >
+                <div style={S.cardTitle}>Portrait</div>
+                <div style={{ fontSize: 11, color: "#888", marginTop: 4 }}>For a potential match · 300 words</div>
+              </div>
             </div>
-            {substrateOpen === "portrait" && (
+            {substrateOpen === "self" && (
               <div style={{ ...S.card, maxHeight: 480, overflowY: "auto" }}>
                 <div style={{ fontSize: 11, color: "#a95d49", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
-                  Written portrait
+                  Self image — written
                 </div>
-                <NarrativeBlock state={narratives.portrait} onRegenerate={() => fetchNarrative("portrait")} />
+                <NarrativeBlock state={narratives.self} onRegenerate={() => fetchNarrative("self")} />
                 {essentialTruth?.text ? (
                   <div style={{ ...S.quote, marginBottom: 12 }}>"{essentialTruth.text}"</div>
                 ) : (
@@ -1509,6 +1516,14 @@ function UserOverview({ data, user, sessions, onOpenSession }) {
                     );
                   });
                 })()}
+              </div>
+            )}
+            {substrateOpen === "match_portrait" && (
+              <div style={{ ...S.card, maxHeight: 520, overflowY: "auto" }}>
+                <div style={{ fontSize: 11, color: "#a95d49", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
+                  Portrait — for a potential match
+                </div>
+                <NarrativeBlock state={narratives.match_portrait} onRegenerate={() => fetchNarrative("match_portrait")} />
               </div>
             )}
           </>
