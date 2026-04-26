@@ -1292,56 +1292,156 @@ function UserOverview({ data, user, sessions, onOpenSession }) {
               <SubstrateTile id="partner" title="Partner image" dims={partner} totalExpected={50} bd={partnerBd} />
               <SubstrateTile id="relationship" title="Relationship image" dims={relationship} totalExpected={50} bd={relBd} />
             </div>
-            {substrateOpen === "portrait" && portrait.length > 0 && (
-              <div style={{ ...S.card, maxHeight: 340, overflowY: "auto" }}>
-                <div style={{ fontSize: 11, color: "#a95d49", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>Portrait — Angelica's notes</div>
-                {portrait.filter((d) => d.evidence_notes).sort((a, b) => (b.weight || 0) - (a.weight || 0)).map((d) => (
-                  <div key={d.id} style={{ marginBottom: 10 }}>
-                    <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
-                      <span style={{ fontSize: 12, fontWeight: 600, color: "#3d2b24" }}>{d.dimension_name.replace(/_/g, " ")}</span>
-                      <span style={{ fontSize: 10, color: RES_COLORS[d.resolution] || "#888" }}>{d.resolution}</span>
-                    </div>
-                    <div style={{ fontSize: 12, color: "#5a4540", lineHeight: 1.5, marginTop: 2 }}>{d.evidence_notes}</div>
-                  </div>
-                ))}
-                {portrait.filter((d) => d.evidence_notes).length === 0 && <div style={S.mutedText}>No notes written yet.</div>}
+            {substrateOpen === "portrait" && (
+              <div style={{ ...S.card, maxHeight: 480, overflowY: "auto" }}>
+                <div style={{ fontSize: 11, color: "#a95d49", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
+                  Written portrait
+                </div>
+                {essentialTruth?.text ? (
+                  <div style={{ ...S.quote, marginBottom: 12 }}>"{essentialTruth.text}"</div>
+                ) : (
+                  <div style={{ ...S.mutedText, marginBottom: 12 }}>No essential truth yet.</div>
+                )}
+                {(() => {
+                  const visible = portrait.filter((d) => d.resolution && d.resolution !== "unvisited");
+                  if (!visible.length) return <div style={S.mutedText}>Nothing gathered yet.</div>;
+                  const byGroup = visible.reduce((acc, d) => {
+                    const k = d.grouping || "other";
+                    (acc[k] = acc[k] || []).push(d);
+                    return acc;
+                  }, {});
+                  return Object.entries(byGroup).map(([group, dims]) => {
+                    const sorted = dims.sort((a, b) => (b.weight || 0) - (a.weight || 0));
+                    const sentence = sorted
+                      .map((d) => d.dimension_name.replace(/_/g, " "))
+                      .join(", ");
+                    const notes = sorted.filter((d) => d.evidence || d.evidence_notes);
+                    return (
+                      <div key={group} style={{ marginBottom: 14 }}>
+                        <div style={{ fontSize: 10, color: "#a95d49", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>
+                          {group.replace(/_/g, " ")}
+                        </div>
+                        <div style={{ fontSize: 13, color: "#3d2b24", lineHeight: 1.6 }}>{sentence}.</div>
+                        {notes.length > 0 && (
+                          <div style={{ marginTop: 6, paddingLeft: 10, borderLeft: "2px solid #ede0da" }}>
+                            {notes.map((d) => (
+                              <div key={d.id} style={{ fontSize: 12, color: "#5a4540", lineHeight: 1.5, marginTop: 3, fontStyle: "italic" }}>
+                                <span style={{ fontStyle: "normal", fontWeight: 600 }}>{d.dimension_name.replace(/_/g, " ")}: </span>
+                                {d.evidence || d.evidence_notes}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  });
+                })()}
               </div>
             )}
-            {substrateOpen === "partner" && partner.length > 0 && (
-              <div style={{ ...S.card, maxHeight: 340, overflowY: "auto" }}>
-                <div style={{ fontSize: 11, color: "#a95d49", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>Partner image — Angelica's notes</div>
-                {partner.filter((d) => d.resolution !== "unvisited").sort((a, b) => (b.confidence || 0) - (a.confidence || 0)).map((d) => {
-                  const desc = [d.stated_value, d.inferred_value, d.tested_value].filter(Boolean).join(" · ");
-                  return (
-                    <div key={d.id} style={{ marginBottom: 10 }}>
-                      <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
-                        <span style={{ fontSize: 12, fontWeight: 600, color: "#3d2b24" }}>{d.dimension_name.replace(/_/g, " ")}</span>
-                        <span style={{ fontSize: 10, color: RES_COLORS[d.resolution] || "#888" }}>{d.resolution}</span>
+            {substrateOpen === "partner" && (
+              <div style={{ ...S.card, maxHeight: 480, overflowY: "auto" }}>
+                <div style={{ fontSize: 11, color: "#a95d49", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
+                  Partner image — written
+                </div>
+                {(() => {
+                  const visible = partner.filter((d) => d.resolution && d.resolution !== "unvisited");
+                  if (!visible.length) return <div style={S.mutedText}>Nothing gathered yet.</div>;
+                  const byGroup = visible.reduce((acc, d) => {
+                    const k = d.grouping || d.category || "other";
+                    (acc[k] = acc[k] || []).push(d);
+                    return acc;
+                  }, {});
+                  return Object.entries(byGroup).map(([group, rows]) => {
+                    const sorted = rows.sort((a, b) => (b.weight || 0) - (a.weight || 0));
+                    return (
+                      <div key={group} style={{ marginBottom: 14 }}>
+                        <div style={{ fontSize: 10, color: "#a95d49", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>
+                          {String(group).replace(/_/g, " ")}
+                        </div>
+                        <div style={{ fontSize: 13, color: "#3d2b24", lineHeight: 1.6 }}>
+                          {sorted.map((d, i) => {
+                            const stated = d.position_stated;
+                            const revealed = d.position_revealed ?? d.position;
+                            const parts = [];
+                            if (stated != null) parts.push(`stated ${stated}`);
+                            if (revealed != null) parts.push(`revealed ${revealed}`);
+                            const tail = parts.length ? ` (${parts.join(", ")})` : "";
+                            return (
+                              <span key={d.id}>
+                                <span style={{ fontWeight: 600 }}>{d.dimension_name.replace(/_/g, " ")}</span>
+                                {tail}
+                                {i < sorted.length - 1 ? "; " : "."}
+                              </span>
+                            );
+                          })}
+                        </div>
+                        {sorted.filter((d) => d.evidence).length > 0 && (
+                          <div style={{ marginTop: 6, paddingLeft: 10, borderLeft: "2px solid #ede0da" }}>
+                            {sorted.filter((d) => d.evidence).map((d) => (
+                              <div key={d.id} style={{ fontSize: 12, color: "#5a4540", lineHeight: 1.5, marginTop: 3, fontStyle: "italic" }}>
+                                <span style={{ fontStyle: "normal", fontWeight: 600 }}>{d.dimension_name.replace(/_/g, " ")}: </span>
+                                {d.evidence}
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                      {desc && <div style={{ fontSize: 12, color: "#5a4540", lineHeight: 1.5, marginTop: 2 }}>{desc}</div>}
-                    </div>
-                  );
-                })}
-                {partner.filter((d) => d.resolution !== "unvisited").length === 0 && <div style={S.mutedText}>No data yet.</div>}
+                    );
+                  });
+                })()}
               </div>
             )}
-            {substrateOpen === "relationship" && relationship.length > 0 && (
-              <div style={{ ...S.card, maxHeight: 340, overflowY: "auto" }}>
-                <div style={{ fontSize: 11, color: "#a95d49", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>Relationship image — Angelica's notes</div>
-                {relationship.filter((d) => d.resolution !== "unvisited").sort((a, b) => (a.tier - b.tier) || ((b.confidence || 0) - (a.confidence || 0))).map((d) => {
-                  const desc = [d.imagined_position != null ? `Imagined ${d.imagined_position}` : null, d.evidenced_position != null ? `Evidenced ${d.evidenced_position}` : null].filter(Boolean).join(" · ");
-                  return (
-                    <div key={d.id} style={{ marginBottom: 10 }}>
-                      <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
-                        <span style={{ fontSize: 12, fontWeight: 600, color: "#3d2b24" }}>{d.dimension_name.replace(/_/g, " ")}</span>
-                        <span style={{ fontSize: 10, color: "#888" }}>T{d.tier}</span>
-                        <span style={{ fontSize: 10, color: RES_COLORS[d.resolution] || "#888" }}>{d.resolution}</span>
+            {substrateOpen === "relationship" && (
+              <div style={{ ...S.card, maxHeight: 480, overflowY: "auto" }}>
+                <div style={{ fontSize: 11, color: "#a95d49", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
+                  Relationship image — written
+                </div>
+                {(() => {
+                  const visible = relationship.filter((d) => d.resolution && d.resolution !== "unvisited");
+                  if (!visible.length) return <div style={S.mutedText}>Nothing gathered yet.</div>;
+                  const byGroup = visible.reduce((acc, d) => {
+                    const k = d.grouping || "other";
+                    (acc[k] = acc[k] || []).push(d);
+                    return acc;
+                  }, {});
+                  return Object.entries(byGroup).map(([group, rows]) => {
+                    const sorted = rows.sort((a, b) => (b.weight || b.user_weight || b.default_weight || 0) - (a.weight || a.user_weight || a.default_weight || 0));
+                    return (
+                      <div key={group} style={{ marginBottom: 14 }}>
+                        <div style={{ fontSize: 10, color: "#a95d49", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>
+                          {String(group).replace(/_/g, " ")}
+                        </div>
+                        <div style={{ fontSize: 13, color: "#3d2b24", lineHeight: 1.6 }}>
+                          {sorted.map((d, i) => {
+                            const stated = d.position_stated ?? d.imagined_position;
+                            const revealed = d.position_revealed ?? d.evidenced_position;
+                            const parts = [];
+                            if (stated != null) parts.push(`stated ${stated}`);
+                            if (revealed != null) parts.push(`revealed ${revealed}`);
+                            const tail = parts.length ? ` (${parts.join(", ")})` : "";
+                            return (
+                              <span key={d.id}>
+                                <span style={{ fontWeight: 600 }}>{d.dimension_name.replace(/_/g, " ")}</span>
+                                {tail}
+                                {i < sorted.length - 1 ? "; " : "."}
+                              </span>
+                            );
+                          })}
+                        </div>
+                        {sorted.filter((d) => d.evidence).length > 0 && (
+                          <div style={{ marginTop: 6, paddingLeft: 10, borderLeft: "2px solid #ede0da" }}>
+                            {sorted.filter((d) => d.evidence).map((d) => (
+                              <div key={d.id} style={{ fontSize: 12, color: "#5a4540", lineHeight: 1.5, marginTop: 3, fontStyle: "italic" }}>
+                                <span style={{ fontStyle: "normal", fontWeight: 600 }}>{d.dimension_name.replace(/_/g, " ")}: </span>
+                                {d.evidence}
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                      {desc && <div style={{ fontSize: 12, color: "#5a4540", lineHeight: 1.5, marginTop: 2 }}>{desc}</div>}
-                    </div>
-                  );
-                })}
-                {relationship.filter((d) => d.resolution !== "unvisited").length === 0 && <div style={S.mutedText}>No data yet.</div>}
+                    );
+                  });
+                })()}
               </div>
             )}
           </>
@@ -1891,6 +1991,9 @@ function SessionSurface({
               {messages.map((m) => {
                 const isUser = m.role === "user";
                 const cq = cqByAnchorId.get(m.id) || null;
+                const wordCount = isUser
+                  ? (m.content || "").trim().split(/\s+/).filter(Boolean).length
+                  : 0;
                 return (
                   <Fragment key={m.id}>
                     <div style={{ ...S.messageCard, ...(isUser ? S.userMessageCard : S.assistantMessageCard) }}>
@@ -1898,7 +2001,29 @@ function SessionSurface({
                         <span>{isUser ? (user.display_name || "User") : "Angelica"}</span>
                         <span>{formatTime(m.created_at)}</span>
                       </div>
-                      <div style={S.messageBody}>{m.content}</div>
+                      {isUser ? (
+                        <div
+                          style={{
+                            background: "#fff",
+                            border: "1px solid #e5e0d8",
+                            borderRadius: 8,
+                            minHeight: 44,
+                            padding: "10px 12px",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "flex-end",
+                            color: "#9a9285",
+                            fontSize: 12,
+                            fontStyle: "italic",
+                            letterSpacing: "0.02em",
+                          }}
+                          title="User message hidden from admin"
+                        >
+                          {wordCount} {wordCount === 1 ? "word" : "words"}
+                        </div>
+                      ) : (
+                        <div style={S.messageBody}>{m.content}</div>
+                      )}
                     </div>
                     <div>
                       {cq ? (

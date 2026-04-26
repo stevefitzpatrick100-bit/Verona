@@ -4,6 +4,7 @@ import { buildPortraitContext } from "@/lib/portrait";
 import { applyPortraitUpdate } from "@/lib/portrait-update";
 import { buildCQCoachingContext } from "@/lib/cq-coaching";
 import { runObserver } from "@/lib/observer";
+import { buildTimeContext } from "@/lib/time-context";
 
 // Cache the active prompt for 60 seconds to avoid a DB hit on every message
 let _promptCache = null;
@@ -39,7 +40,7 @@ async function getActiveAngelicaPrompt(supabase, userPromptVersionId) {
 }
 
 export async function POST(req) {
-  const { messages, userId, sessionId } = await req.json();
+  const { messages, userId, sessionId, clientTime, timezone } = await req.json();
 
   if (!userId) {
     return Response.json({ error: "No user ID provided" }, { status: 400 });
@@ -72,6 +73,34 @@ export async function POST(req) {
     if (cqCoaching) {
       systemPrompt += "\n\n" + cqCoaching;
     }
+
+    // Time context: when "now" is for the user, and how long since they last spoke.
+    const { data: userMeta } = await supabase
+      .from("users")
+      .select("created_at")
+      .eq("id", userId)
+      .single();
+
+    const { data: lastMsgRows } = await supabase
+      .from("messages")
+      .select("created_at, session_id")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(1);
+    const lastMsg = lastMsgRows?.[0];
+    const isFirstTurnOfSession = !lastMsg || lastMsg.session_id !== sessionId;
+
+    const timeBlock = buildTimeContext({
+      timezone,
+      clientTimeIso: clientTime,
+      lastMessageAt: lastMsg?.created_at,
+      userCreatedAt: userMeta?.created_at,
+      isFirstTurnOfSession,
+    });
+    if (timeBlock) {
+      systemPrompt += "\n\n" + timeBlock;
+    }
+
     const promptLabel = activePrompt.label;
 
     // Call Anthropic API for conversation

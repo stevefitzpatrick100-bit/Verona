@@ -171,6 +171,11 @@ export default function Home() {
           messages: updated.map((m) => ({ role: m.role, content: m.content })),
           userId,
           sessionId: sid,
+          clientTime: new Date().toISOString(),
+          timezone:
+            (typeof Intl !== "undefined" &&
+              Intl.DateTimeFormat().resolvedOptions().timeZone) ||
+            undefined,
         }),
       });
       const data = await res.json();
