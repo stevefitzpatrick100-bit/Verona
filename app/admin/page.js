@@ -72,6 +72,81 @@ function niceLabel(key) {
     .join(" ");
 }
 
+const CQ_DIMS = [
+  "honesty","trust","safety","investment",
+  "anticipation","momentum","progress_belief","frustration",
+  "return_signal","depth_signal","arrival_state",
+  "orientation","goal_aliveness","agency","dependency_risk",
+];
+
+function exportObserverNotes({ user, session, messages, sortedCq, anchorByCq, observerNotes }) {
+  const name = user?.display_name || "User";
+  const sessNum = session?.session_number ?? "?";
+  const startedAt = session?.started_at ? new Date(session.started_at).toLocaleString() : "";
+  const endedAt = session?.ended_at ? new Date(session.ended_at).toLocaleString() : "";
+  const turnIndex = new Map(messages.map((m, i) => [m.id, i + 1]));
+
+  const lines = [];
+  lines.push(`# Observer notes — ${name} — Session ${sessNum}`);
+  if (startedAt) lines.push(`Started: ${startedAt}${endedAt ? ` · Ended: ${endedAt}` : ""}`);
+  lines.push(`Stage ${session?.stage ?? "-"} · Level ${session?.level ?? "-"} · ${messages.length} turns · ${sortedCq.length} observer reading${sortedCq.length === 1 ? "" : "s"}`);
+  lines.push("");
+
+  if (sortedCq.length) {
+    lines.push("## CQ observer readings");
+    lines.push("");
+    sortedCq.forEach((cq, i) => {
+      const anchor = anchorByCq.get(cq.id);
+      const turn = anchor ? turnIndex.get(anchor.id) : null;
+      lines.push(`### Reading ${i + 1}${turn ? ` — after turn ${turn}` : ""}`);
+      lines.push(`_${cq.measured_at ? new Date(cq.measured_at).toLocaleString() : ""}_`);
+      if (anchor) {
+        const preview = (anchor.content || "").replace(/\s+/g, " ").trim().slice(0, 200);
+        lines.push(`> **${anchor.role === "user" ? name : "Angelica"}:** ${preview}${preview.length === 200 ? "…" : ""}`);
+      }
+      lines.push("");
+      if (cq.alert) lines.push(`**⚠ Alert:** ${cq.alert.replace(/_/g, " ")}`);
+      if (cq.delta_summary) lines.push(`**Summary:** ${cq.delta_summary}`);
+      lines.push("");
+      lines.push("| Dimension | Score |");
+      lines.push("|---|---|");
+      CQ_DIMS.forEach((k) => {
+        if (cq[k] != null) lines.push(`| ${niceLabel(k)} | ${cq[k]} |`);
+      });
+      const rationale = cq.rationale || {};
+      const rKeys = Object.keys(rationale).filter((k) => rationale[k]);
+      if (rKeys.length) {
+        lines.push("");
+        lines.push("**Rationale:**");
+        rKeys.forEach((k) => lines.push(`- _${niceLabel(k)}:_ ${rationale[k]}`));
+      }
+      lines.push("");
+    });
+  }
+
+  if (observerNotes && observerNotes.length) {
+    lines.push("## Manual observer notes");
+    lines.push("");
+    observerNotes.forEach((n) => {
+      lines.push(`- _${n.created_at ? new Date(n.created_at).toLocaleString() : ""}_ — ${n.note}`);
+    });
+    lines.push("");
+  }
+
+  const md = lines.join("\n");
+  const safeName = name.replace(/[^a-z0-9]+/gi, "_").replace(/^_+|_+$/g, "");
+  const fname = `observer_${safeName}_session${sessNum}.md`;
+  const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fname;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 function formatDate(ts) {
   if (!ts) return "-";
   return new Date(ts).toLocaleDateString([], {
@@ -2064,8 +2139,16 @@ function SessionSurface({
           <div style={{ ...S.card, marginTop: 12 }}>
             <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", columnGap: 14, marginBottom: 8 }}>
               <div style={S.cardTitle}>Conversation</div>
-              <div style={{ ...S.cardTitle, color: "#6b8e7f" }}>
-                Observer ({sortedCq.length})
+              <div style={{ ...S.cardTitle, color: "#6b8e7f", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                <span>Observer ({sortedCq.length})</span>
+                <button
+                  onClick={() => exportObserverNotes({ user, session, messages, sortedCq, anchorByCq, observerNotes })}
+                  disabled={!sortedCq.length && !observerNotes.length}
+                  style={{ ...S.secondaryBtn, padding: "4px 10px", fontSize: 11, opacity: (sortedCq.length || observerNotes.length) ? 1 : 0.4 }}
+                  title="Download observer notes as Markdown"
+                >
+                  ↓ Export
+                </button>
               </div>
             </div>
             {!messages.length && <div style={S.mutedText}>No messages in this session.</div>}
