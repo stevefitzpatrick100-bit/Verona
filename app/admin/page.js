@@ -2542,7 +2542,7 @@ const ANGELICA_SECTIONS = [
   { id: "core", label: "Core persona" },
   { id: "levels", label: "Levels" },
   { id: "stages", label: "Stages" },
-  { id: "artefacts", label: "Artefacts" },
+  { id: "images", label: "Images" },
 ];
 
 function AngelicaTab() {
@@ -2583,7 +2583,7 @@ function AngelicaTab() {
       {section === "core" && <PromptManager promptKey="angelica" />}
       {section === "levels" && <LevelsTab />}
       {section === "stages" && <StagesTab />}
-      {section === "artefacts" && <ArtefactsTab />}
+      {section === "images" && <ImagesTab />}
     </div>
   );
 }
@@ -2658,19 +2658,133 @@ function StagesTab() {
   );
 }
 
-const ARTEFACT_SUBTABS = [
+const IMAGE_SUBTABS = [
   { id: "self", key: "artefact_self", label: "Self image" },
   { id: "partner", key: "artefact_partner", label: "Partner image" },
   { id: "relationship", key: "artefact_relationship", label: "Relationship image" },
   { id: "portrait", key: "artefact_portrait", label: "Portrait (for a match)" },
 ];
 
-function ArtefactsTab() {
+const IMAGE_SPECS = {
+  self: {
+    question: "Who is this person?",
+    description:
+      "The Self image is Angelica's working understanding of the user — what she is like, what she cares about, fears, and hopes for. It is built turn by turn from what the user says and from what their behaviour reveals. The written self image is a 2\u20133 paragraph plain-English description used internally and as a building block of the Portrait.",
+    table: "portrait_dimensions",
+    totalDimensions: 100,
+    parameters: [
+      { name: "dimension_name", desc: "e.g. independence, conflict_style, ambition" },
+      { name: "grouping", desc: "thematic cluster (values, temperament, history, etc.)" },
+      { name: "position_stated", desc: "1\u201310. What she says about herself." },
+      { name: "position_revealed", desc: "1\u201310. What her words & history reveal." },
+      { name: "weight", desc: "1\u201310. How load-bearing this dimension is for her." },
+      { name: "vector", desc: "stable | moving_up | moving_down" },
+      { name: "evidence", desc: "Short quote or note grounding the read." },
+      { name: "confidence", desc: "1\u20135. How sure Angelica is." },
+      { name: "resolution", desc: "unvisited \u2192 emerging \u2192 forming \u2192 clear \u2192 tested" },
+    ],
+  },
+  partner: {
+    question: "What kind of partner does she want?",
+    description:
+      "The Partner image describes the qualities the user is looking for in a partner. Stated values are what she says she wants; revealed values are what her own portrait and history actually point to. The two often differ \u2014 the gap is itself useful information.",
+    table: "partner_dimensions",
+    totalDimensions: 50,
+    parameters: [
+      { name: "dimension_name", desc: "e.g. emotional_intelligence, ambition, kindness" },
+      { name: "grouping", desc: "thematic cluster (values, temperament, lifestyle, etc.)" },
+      { name: "position_stated", desc: "1\u201310. What she says she wants." },
+      { name: "position_revealed", desc: "1\u201310. What her self image / history suggest she actually needs." },
+      { name: "weight", desc: "1\u201310. How important this is to her." },
+      { name: "flexibility", desc: "rigid | moderate | flexible \u2014 how negotiable this is." },
+      { name: "evidence", desc: "Short quote or note." },
+      { name: "confidence", desc: "1\u20135." },
+      { name: "resolution", desc: "unvisited \u2192 emerging \u2192 forming \u2192 clear \u2192 tested" },
+    ],
+  },
+  relationship: {
+    question: "What kind of relationship does she want?",
+    description:
+      "The Relationship image is the shape of the shared life she wants \u2014 not personality traits, but how the two lives fit together. Stated = what she imagines wanting. Revealed = what her history and current life actually evidence about the shape that fits her.",
+    table: "relationship_dimensions",
+    totalDimensions: 50,
+    parameters: [
+      { name: "dimension_name", desc: "e.g. shared_finances, time_alone, pace_of_life" },
+      { name: "grouping", desc: "thematic cluster (rhythm, money, family, intimacy, etc.)" },
+      { name: "position_stated", desc: "1\u201310. What she imagines wanting." },
+      { name: "position_revealed", desc: "1\u201310. What her history actually evidences." },
+      { name: "weight", desc: "1\u201310. How load-bearing this is for the shared life." },
+      { name: "flexibility", desc: "rigid | moderate | flexible." },
+      { name: "evidence", desc: "Short quote or note." },
+      { name: "confidence", desc: "1\u20135." },
+      { name: "resolution", desc: "unvisited \u2192 emerging \u2192 forming \u2192 clear \u2192 tested" },
+    ],
+  },
+  portrait: {
+    question: "Portrait \u2014 for a potential match",
+    description:
+      "The Portrait is a ~300-word piece of prose written for someone who has not yet met her, but might. It weaves the Self, Partner and Relationship images into a single coherent description \u2014 warm, observant, honest. It is not a dating profile and not a marketing blurb. It is the artefact a real human reader could form a true sense of her from.",
+    sources: ["portrait_dimensions", "partner_dimensions", "relationship_dimensions"],
+    parameters: [
+      { name: "name", desc: "User's display name. Use {name} in the instruction text to interpolate." },
+      { name: "length", desc: "~300 words, 2\u20134 paragraphs, no headings or lists." },
+      { name: "voice", desc: "Warm, observant, honest. First-person-omniscient about her, not first-person from her." },
+    ],
+  },
+};
+
+function ImageSpecPanel({ id }) {
+  const spec = IMAGE_SPECS[id];
+  if (!spec) return null;
+  return (
+    <div style={{ padding: "16px 20px", background: "#fbf6f3", borderBottom: "1px solid #ede0da" }}>
+      <div style={{ fontSize: 11, color: "#a95d49", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>
+        {spec.question}
+      </div>
+      <div style={{ fontSize: 13, color: "#3d2b24", lineHeight: 1.6, marginBottom: 12 }}>{spec.description}</div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+        <div>
+          <div style={{ fontSize: 10, color: "#a95d49", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>Parameters</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {spec.parameters.map((p) => (
+              <div key={p.name} style={{ fontSize: 12, color: "#5a4540", lineHeight: 1.4 }}>
+                <span style={{ fontFamily: "monospace", fontWeight: 600, color: "#3d2b24" }}>{p.name}</span>
+                <span style={{ color: "#888" }}> — {p.desc}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div>
+          <div style={{ fontSize: 10, color: "#a95d49", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>Data model</div>
+          {spec.table && (
+            <div style={{ fontSize: 12, color: "#5a4540", lineHeight: 1.5 }}>
+              <div>Table: <span style={{ fontFamily: "monospace", color: "#3d2b24" }}>{spec.table}</span></div>
+              <div>Capacity: {spec.totalDimensions} dimensions per user.</div>
+              <div style={{ marginTop: 4, color: "#888" }}>Written turn-by-turn by the portrait analyzer ({"PORTRAIT_ANALYSIS_PROMPT"}). Resolution advances as confidence grows.</div>
+            </div>
+          )}
+          {spec.sources && (
+            <div style={{ fontSize: 12, color: "#5a4540", lineHeight: 1.5 }}>
+              <div>Sources:</div>
+              {spec.sources.map((s) => (
+                <div key={s} style={{ fontFamily: "monospace", color: "#3d2b24", marginLeft: 8 }}>• {s}</div>
+              ))}
+              <div style={{ marginTop: 4, color: "#888" }}>Composed at request time — no separate table. Will be persisted to <span style={{ fontFamily: "monospace" }}>artefacts</span> at session-end (planned).</div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ImagesTab() {
   const [sub, setSub] = useState("self");
-  const item = ARTEFACT_SUBTABS.find((t) => t.id === sub);
+  const item = IMAGE_SUBTABS.find((t) => t.id === sub);
   return (
     <div>
-      <SubTabBar items={ARTEFACT_SUBTABS} value={sub} onChange={setSub} />
+      <SubTabBar items={IMAGE_SUBTABS} value={sub} onChange={setSub} />
+      <ImageSpecPanel id={sub} />
       <PromptManager key={sub} promptKey={item.key} />
     </div>
   );
