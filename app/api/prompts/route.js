@@ -21,8 +21,11 @@ export async function GET(req) {
 
   if (error) return Response.json({ error: error.message }, { status: 500 });
 
-  // If no DB versions yet, return the hardcoded one as a virtual v0
+  // If no DB versions yet, return the hardcoded one as a virtual v0 (angelica only)
   if (!data || data.length === 0) {
+    if (key !== "angelica") {
+      return Response.json({ versions: [] });
+    }
     return Response.json({
       versions: [{
         id: null,

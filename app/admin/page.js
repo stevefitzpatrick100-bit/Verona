@@ -647,7 +647,7 @@ export default function AdminPage() {
         />
       )}
 
-      {topTab === "angelica" && <PromptsTab />}
+      {topTab === "angelica" && <AngelicaTab />}
     </div>
   );
 }
@@ -2331,7 +2331,125 @@ function InvitesTab({
   );
 }
 
-function PromptsTab() {
+const ANGELICA_SECTIONS = [
+  { id: "core", label: "Core persona" },
+  { id: "levels", label: "Levels" },
+  { id: "stages", label: "Stages" },
+];
+
+function AngelicaTab() {
+  const [section, setSection] = useState("core");
+  return (
+    <div>
+      <div style={{
+        display: "flex",
+        gap: 6,
+        padding: "12px 20px",
+        borderBottom: "1px solid #dcc1b7",
+        background: "#f6e5df",
+      }}>
+        {ANGELICA_SECTIONS.map((s) => {
+          const active = section === s.id;
+          return (
+            <button
+              key={s.id}
+              onClick={() => setSection(s.id)}
+              style={{
+                background: active ? "#a95d49" : "transparent",
+                color: active ? "#fff" : "#8e6a60",
+                border: active ? "1px solid #a95d49" : "1px solid #e2c9bf",
+                borderRadius: 4,
+                padding: "7px 16px",
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: "pointer",
+                fontFamily: "inherit",
+                letterSpacing: "0.04em",
+              }}
+            >
+              {s.label}
+            </button>
+          );
+        })}
+      </div>
+      {section === "core" && <PromptManager promptKey="angelica" />}
+      {section === "levels" && <LevelsTab />}
+      {section === "stages" && <StagesTab />}
+    </div>
+  );
+}
+
+const LEVEL_SUBTABS = [
+  { id: "level1", key: "level_1", label: "1 — Warm stranger" },
+  { id: "level2", key: "level_2", label: "2 — Knows them" },
+  { id: "level3", key: "level_3", label: "3 — Trusted advisor" },
+];
+
+const STAGE_SUBTABS = [
+  { id: "stage1", key: "stage_1", label: "1 — Building trust" },
+  { id: "stage2", key: "stage_2", label: "2 — Coaching" },
+  { id: "stage3", key: "stage_3", label: "3 — Good evenings" },
+  { id: "stage4", key: "stage_4", label: "4 — Something more" },
+];
+
+function SubTabBar({ items, value, onChange }) {
+  return (
+    <div style={{
+      display: "flex",
+      gap: 6,
+      padding: "10px 20px",
+      borderBottom: "1px solid #dcc1b7",
+      flexWrap: "wrap",
+    }}>
+      {items.map((t) => {
+        const active = value === t.id;
+        return (
+          <button
+            key={t.id}
+            onClick={() => onChange(t.id)}
+            style={{
+              background: active ? "#a95d49" : "transparent",
+              color: active ? "#fff" : "#8e6a60",
+              border: active ? "1px solid #a95d49" : "1px solid #e2c9bf",
+              borderRadius: 4,
+              padding: "5px 12px",
+              fontSize: 11,
+              fontWeight: 600,
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            {t.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function LevelsTab() {
+  const [sub, setSub] = useState("level1");
+  const item = LEVEL_SUBTABS.find((t) => t.id === sub);
+  return (
+    <div>
+      <SubTabBar items={LEVEL_SUBTABS} value={sub} onChange={setSub} />
+      <PromptManager key={sub} promptKey={item.key} />
+    </div>
+  );
+}
+
+function StagesTab() {
+  const [sub, setSub] = useState("stage1");
+  const item = STAGE_SUBTABS.find((t) => t.id === sub);
+  return (
+    <div>
+      <SubTabBar items={STAGE_SUBTABS} value={sub} onChange={setSub} />
+      <PromptManager key={sub} promptKey={item.key} />
+    </div>
+  );
+}
+
+function PromptManager({ promptKey }) {
   const [versions, setVersions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editContent, setEditContent] = useState("");
@@ -2346,7 +2464,7 @@ function PromptsTab() {
 
   async function load() {
     setLoading(true);
-    const res = await fetch("/api/prompts?key=angelica", { headers: { authorization: pw() } });
+    const res = await fetch(`/api/prompts?key=${encodeURIComponent(promptKey)}`, { headers: { authorization: pw() } });
     const { versions: v } = await res.json();
     setVersions(v || []);
     const active = (v || []).find((x) => x.is_active);
@@ -2354,7 +2472,7 @@ function PromptsTab() {
     setLoading(false);
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [promptKey]);
 
   useEffect(() => {
     if (versions.length > 0 && !selectedVersion) {
@@ -2391,7 +2509,7 @@ function PromptsTab() {
         content: editContent,
         label: revLabel,
         notes: `Revision of ${selectedVersion.label || "active"}`,
-        key: "angelica",
+        key: promptKey,
       }),
     });
     const json = await res.json();
@@ -2415,7 +2533,7 @@ function PromptsTab() {
     const res = await fetch("/api/prompts", {
       method: "POST",
       headers: { "Content-Type": "application/json", authorization: pw() },
-      body: JSON.stringify({ content: editContent, label: editLabel, notes: editNotes, key: "angelica" }),
+      body: JSON.stringify({ content: editContent, label: editLabel, notes: editNotes, key: promptKey }),
     });
     const json = await res.json();
     if (json.error) {
@@ -2434,7 +2552,7 @@ function PromptsTab() {
     await fetch("/api/prompts", {
       method: "PATCH",
       headers: { "Content-Type": "application/json", authorization: pw() },
-      body: JSON.stringify({ id, key: "angelica" }),
+      body: JSON.stringify({ id, key: promptKey }),
     });
     await load();
     setActivatingId(null);
