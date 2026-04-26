@@ -79,7 +79,7 @@ const CQ_DIMS = [
   "orientation","goal_aliveness","agency","dependency_risk",
 ];
 
-function exportObserverNotes({ user, session, messages, sortedCq, anchorByCq, observerNotes }) {
+function buildObserverNotesMarkdown({ user, session, messages, sortedCq, anchorByCq, observerNotes }) {
   const name = user?.display_name || "User";
   const sessNum = session?.session_number ?? "?";
   const startedAt = session?.started_at ? new Date(session.started_at).toLocaleString() : "";
@@ -133,18 +133,37 @@ function exportObserverNotes({ user, session, messages, sortedCq, anchorByCq, ob
     lines.push("");
   }
 
-  const md = lines.join("\n");
-  const safeName = name.replace(/[^a-z0-9]+/gi, "_").replace(/^_+|_+$/g, "");
-  const fname = `observer_${safeName}_session${sessNum}.md`;
-  const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = fname;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return lines.join("\n");
+}
+
+function CopyObserverButton({ user, session, messages, sortedCq, anchorByCq, observerNotes }) {
+  const [copied, setCopied] = useState(false);
+  const empty = !sortedCq.length && !observerNotes.length;
+  const onCopy = async () => {
+    const md = buildObserverNotesMarkdown({ user, session, messages, sortedCq, anchorByCq, observerNotes });
+    try {
+      await navigator.clipboard.writeText(md);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = md;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+  return (
+    <button
+      onClick={onCopy}
+      disabled={empty}
+      style={{ ...S.secondaryBtn, padding: "4px 10px", fontSize: 11, opacity: empty ? 0.4 : 1 }}
+      title="Copy observer notes as Markdown"
+    >
+      {copied ? "✓ Copied" : "⧉ Copy"}
+    </button>
+  );
 }
 
 function formatDate(ts) {
@@ -2141,14 +2160,7 @@ function SessionSurface({
               <div style={S.cardTitle}>Conversation</div>
               <div style={{ ...S.cardTitle, color: "#6b8e7f", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                 <span>Observer ({sortedCq.length})</span>
-                <button
-                  onClick={() => exportObserverNotes({ user, session, messages, sortedCq, anchorByCq, observerNotes })}
-                  disabled={!sortedCq.length && !observerNotes.length}
-                  style={{ ...S.secondaryBtn, padding: "4px 10px", fontSize: 11, opacity: (sortedCq.length || observerNotes.length) ? 1 : 0.4 }}
-                  title="Download observer notes as Markdown"
-                >
-                  ↓ Export
-                </button>
+                <CopyObserverButton user={user} session={session} messages={messages} sortedCq={sortedCq} anchorByCq={anchorByCq} observerNotes={observerNotes} />
               </div>
             </div>
             {!messages.length && <div style={S.mutedText}>No messages in this session.</div>}
