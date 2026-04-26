@@ -2542,6 +2542,7 @@ const ANGELICA_SECTIONS = [
   { id: "core", label: "Core persona" },
   { id: "levels", label: "Levels" },
   { id: "stages", label: "Stages" },
+  { id: "artefacts", label: "Artefacts" },
 ];
 
 function AngelicaTab() {
@@ -2582,6 +2583,7 @@ function AngelicaTab() {
       {section === "core" && <PromptManager promptKey="angelica" />}
       {section === "levels" && <LevelsTab />}
       {section === "stages" && <StagesTab />}
+      {section === "artefacts" && <ArtefactsTab />}
     </div>
   );
 }
@@ -2651,6 +2653,24 @@ function StagesTab() {
   return (
     <div>
       <SubTabBar items={STAGE_SUBTABS} value={sub} onChange={setSub} />
+      <PromptManager key={sub} promptKey={item.key} />
+    </div>
+  );
+}
+
+const ARTEFACT_SUBTABS = [
+  { id: "self", key: "artefact_self", label: "Self image" },
+  { id: "partner", key: "artefact_partner", label: "Partner image" },
+  { id: "relationship", key: "artefact_relationship", label: "Relationship image" },
+  { id: "portrait", key: "artefact_portrait", label: "Portrait (for a match)" },
+];
+
+function ArtefactsTab() {
+  const [sub, setSub] = useState("self");
+  const item = ARTEFACT_SUBTABS.find((t) => t.id === sub);
+  return (
+    <div>
+      <SubTabBar items={ARTEFACT_SUBTABS} value={sub} onChange={setSub} />
       <PromptManager key={sub} promptKey={item.key} />
     </div>
   );

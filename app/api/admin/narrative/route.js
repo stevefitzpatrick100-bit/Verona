@@ -5,33 +5,54 @@ function unauthorized(req) {
   return auth !== process.env.ADMIN_PASSWORD;
 }
 
-const SINGLE_KINDS = {
+// Default instructions — used when no active version exists in prompt_versions.
+// Each artefact has a prompt_key that the admin can edit under Angelica → Artefacts.
+const DEFAULTS = {
   self: {
+    promptKey: "artefact_self",
     title: "Who is this person?",
     table: "portrait_dimensions",
     instruction:
       "Write a short, plain-English description of this person (2–3 paragraphs). Answer the question: who is she? What is she like? What does she care about, fear, hope for? Use the dimensions and evidence below as raw material — do not list them, weave them into prose. If something is unknown, do not invent it. Use her name where natural.",
   },
-  // legacy alias — keep so older clients still work
-  portrait: {
+  // legacy alias
+  portrait_legacy: {
+    promptKey: "artefact_self",
     title: "Who is this person?",
     table: "portrait_dimensions",
-    instruction:
-      "Write a short, plain-English description of this person (2–3 paragraphs). Answer the question: who is she? What is she like? What does she care about, fear, hope for? Use the dimensions and evidence below as raw material — do not list them, weave them into prose. If something is unknown, do not invent it. Use her name where natural.",
+    instruction: "",
   },
   partner: {
+    promptKey: "artefact_partner",
     title: "What kind of partner does she want?",
     table: "partner_dimensions",
     instruction:
       "Write a short, plain-English description (2–3 paragraphs) of the kind of partner this person seems to want or need. Answer the question: what kind of partner is she looking for? What qualities matter most, what does she say versus what the evidence reveals, what is non-negotiable, what is flexible? Weave the dimensions into prose. If something is unknown, do not invent it.",
   },
   relationship: {
+    promptKey: "artefact_relationship",
     title: "What kind of relationship does she want?",
     table: "relationship_dimensions",
     instruction:
       "Write a short, plain-English description (2–3 paragraphs) of the kind of relationship this person seems to want. Answer the question: what shape of shared life is she imagining? How much overlap, what does daily life look like, what is sacred, what is flexible? Weave the dimensions into prose. If something is unknown, do not invent it.",
   },
+  match_portrait: {
+    promptKey: "artefact_portrait",
+    title: "Portrait — for a potential match",
+    instruction:
+      "You are Angelica writing a portrait of {name} for a potential match — someone who has not yet met her, but might.\n\nWrite approximately 300 words (a single piece of prose, 2–4 paragraphs). The aim is to give the reader a real sense of who she is, what she is looking for in a partner, and the kind of life she wants to share. Weave self, partner-ideal and relationship-shape together into one coherent portrait — not three separate sections.\n\nVoice: warm, observant, honest. Not a dating-profile, not a marketing blurb. The reader should come away thinking \"I understand her.\" Use her name naturally. Do not list dimensions or numbers. Do not invent specifics that are not supported by the evidence below. If something is genuinely unknown, leave it out rather than guess.",
+  },
 };
+
+async function loadInstruction(supabase, promptKey, fallback) {
+  const { data } = await supabase
+    .from("prompt_versions")
+    .select("content")
+    .eq("prompt_key", promptKey)
+    .eq("is_active", true)
+    .maybeSingle();
+  return data?.content?.trim() || fallback;
+}
 
 function dimLines(dims) {
   return (dims || [])
@@ -77,7 +98,11 @@ export async function POST(req) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { userId, kind } = await req.json();
+  const rawBody = await req.json();
+  const { userId } = rawBody;
+  let { kind } = rawBody;
+  if (kind === "portrait") kind = "self"; // legacy alias
+
   if (!userId || !kind) {
     return Response.json({ error: "userId and kind required" }, { status: 400 });
   }
@@ -95,6 +120,10 @@ export async function POST(req) {
 
   // ── Combined match-facing portrait ─────────────────────────
   if (kind === "match_portrait") {
+    const cfg = DEFAULTS.match_portrait;
+    const instruction = (await loadInstruction(supabase, cfg.promptKey, cfg.instruction))
+      .replace(/\{name\}/g, name);
+
     const [{ data: selfDims }, { data: partnerDims }, { data: relDims }] = await Promise.all([
       supabase.from("portrait_dimensions").select("*").eq("user_id", userId),
       supabase.from("partner_dimensions").select("*").eq("user_id", userId),
@@ -106,14 +135,10 @@ export async function POST(req) {
     const rel = dimLines(relDims);
 
     if (!self && !partner && !rel) {
-      return Response.json({ text: "Not enough gathered yet to write a portrait.", question: "Portrait — for a potential match" });
+      return Response.json({ text: "Not enough gathered yet to write a portrait.", question: cfg.title });
     }
 
-    const prompt = `You are Angelica writing a portrait of ${name} for a potential match — someone who has not yet met her, but might.
-
-Write approximately 300 words (a single piece of prose, 2–4 paragraphs). The aim is to give the reader a real sense of who she is, what she is looking for in a partner, and the kind of life she wants to share. Weave self, partner-ideal and relationship-shape together into one coherent portrait — not three separate sections.
-
-Voice: warm, observant, honest. Not a dating-profile, not a marketing blurb. The reader should come away thinking "I understand her." Use her name naturally. Do not list dimensions or numbers. Do not invent specifics that are not supported by the evidence below. If something is genuinely unknown, leave it out rather than guess.
+    const prompt = `${instruction}
 
 ${truthLine}${hypLines ? `Active hypotheses about ${name}:\n${hypLines}\n\n` : ""}── Self (who she is) ──
 ${self || "(nothing gathered)"}
@@ -127,26 +152,27 @@ ${rel || "(nothing gathered)"}
 Write the portrait now. Aim for ~300 words. No headings, no bullet lists.`;
 
     const text = await callClaude(prompt, 1200);
-    return Response.json({ text, question: "Portrait — for a potential match" });
+    return Response.json({ text, question: cfg.title });
   }
 
   // ── Single-image narratives ────────────────────────────────
-  const cfg = SINGLE_KINDS[kind];
+  const cfg = DEFAULTS[kind];
   if (!cfg) {
     return Response.json({ error: "invalid kind" }, { status: 400 });
   }
 
+  const instruction = await loadInstruction(supabase, cfg.promptKey, cfg.instruction);
   const { data: dims } = await supabase.from(cfg.table).select("*").eq("user_id", userId);
   const lines = dimLines(dims);
 
   if (!lines) {
     return Response.json({
-      text: `Not enough gathered yet to write about ${kind === "self" || kind === "portrait" ? "who she is" : kind === "partner" ? "the partner she wants" : "the relationship she wants"}.`,
+      text: `Not enough gathered yet to write about ${kind === "self" ? "who she is" : kind === "partner" ? "the partner she wants" : "the relationship she wants"}.`,
       question: cfg.title,
     });
   }
 
-  const prompt = `${cfg.instruction}
+  const prompt = `${instruction}
 
 Subject: ${name}
 
