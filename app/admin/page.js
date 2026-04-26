@@ -2480,29 +2480,43 @@ function PromptsTab() {
             </button>
           </div>
 
-          {versions.map((v) => (
-            <div
-              key={v.id || "seed"}
-              onClick={() => { setSelectedVersion(v); setEditContent(v.content || ""); }}
-              style={{
-                border: `1px solid ${v.is_active ? "#3f5231" : selectedVersion?.id === v.id ? "#3a4f58" : "#26302d"}`,
-                borderRadius: 6,
-                padding: 10,
-                marginBottom: 8,
-                background: selectedVersion?.id === v.id ? "#132226" : "#121817",
-                cursor: "pointer",
-              }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div style={{ fontWeight: 600 }}>{v.label}</div>
-                {v.is_active && <span style={{ fontSize: 10, color: "#82bd8b" }}>LIVE</span>}
+          {versions.map((v) => {
+            const isSelected = selectedVersion?.id === v.id;
+            return (
+              <div
+                key={v.id || "seed"}
+                onClick={() => { setSelectedVersion(v); setEditContent(v.content || ""); }}
+                style={{
+                  border: `1px solid ${v.is_active ? "#6b8e7f" : isSelected ? "#a95d49" : "#e2c9bf"}`,
+                  borderRadius: 6,
+                  padding: 10,
+                  marginBottom: 8,
+                  background: isSelected ? "#fbeae3" : "#fffdfb",
+                  cursor: "pointer",
+                  color: "#3d2722",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ fontWeight: 600, color: "#3d2722" }}>{v.label}</div>
+                  {v.is_active && (
+                    <span style={{
+                      fontSize: 9,
+                      fontWeight: 700,
+                      letterSpacing: "0.08em",
+                      color: "#fff",
+                      background: "#6b8e7f",
+                      padding: "2px 6px",
+                      borderRadius: 3,
+                    }}>LIVE</span>
+                  )}
+                </div>
+                <div style={S.noteMeta}>
+                  {v.created_at ? timeAgo(v.created_at) : "from code"}
+                  {v.notes ? ` - ${v.notes}` : ""}
+                </div>
               </div>
-              <div style={S.noteMeta}>
-                {v.created_at ? timeAgo(v.created_at) : "from code"}
-                {v.notes ? ` - ${v.notes}` : ""}
-              </div>
-            </div>
-          ))}
+            );
+          })}
           {saveError && <div style={S.errorText}>{saveError}</div>}
         </div>
 
