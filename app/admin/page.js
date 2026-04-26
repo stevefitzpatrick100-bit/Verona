@@ -1237,7 +1237,7 @@ function UserOverview({ data, user, sessions, onOpenSession }) {
 
   const cqScore = cqOverall(latestCQ);
   const { touched: portraitTouched } = resolutionBreakdown(portrait);
-  const portraitPct = Math.round((portraitTouched / 200) * 100);
+  const portraitPct = Math.round((portraitTouched / 100) * 100);
 
   // Inline stat helper
   function Stat({ label, value }) {
@@ -1288,7 +1288,7 @@ function UserOverview({ data, user, sessions, onOpenSession }) {
         return (
           <>
             <div style={{ display: "grid", gap: 10, gridTemplateColumns: "1fr 1fr 1fr" }}>
-              <SubstrateTile id="portrait" title="Portrait" dims={portrait} totalExpected={200} bd={portraitBd} />
+              <SubstrateTile id="portrait" title="Portrait" dims={portrait} totalExpected={100} bd={portraitBd} />
               <SubstrateTile id="partner" title="Partner image" dims={partner} totalExpected={50} bd={partnerBd} />
               <SubstrateTile id="relationship" title="Relationship image" dims={relationship} totalExpected={50} bd={relBd} />
             </div>
@@ -1312,16 +1312,29 @@ function UserOverview({ data, user, sessions, onOpenSession }) {
                   }, {});
                   return Object.entries(byGroup).map(([group, dims]) => {
                     const sorted = dims.sort((a, b) => (b.weight || 0) - (a.weight || 0));
-                    const sentence = sorted
-                      .map((d) => d.dimension_name.replace(/_/g, " "))
-                      .join(", ");
                     const notes = sorted.filter((d) => d.evidence || d.evidence_notes);
                     return (
                       <div key={group} style={{ marginBottom: 14 }}>
                         <div style={{ fontSize: 10, color: "#a95d49", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>
                           {group.replace(/_/g, " ")}
                         </div>
-                        <div style={{ fontSize: 13, color: "#3d2b24", lineHeight: 1.6 }}>{sentence}.</div>
+                        <div style={{ fontSize: 13, color: "#3d2b24", lineHeight: 1.6 }}>
+                          {sorted.map((d, i) => {
+                            const stated = d.position_stated ?? d.stated_position;
+                            const revealed = d.position_revealed ?? d.revealed_position ?? d.observed_position;
+                            const parts = [];
+                            if (stated != null) parts.push(`stated ${stated}`);
+                            if (revealed != null) parts.push(`revealed ${revealed}`);
+                            const tail = parts.length ? ` (${parts.join(", ")})` : "";
+                            return (
+                              <span key={d.id}>
+                                <span style={{ fontWeight: 600 }}>{d.dimension_name.replace(/_/g, " ")}</span>
+                                {tail}
+                                {i < sorted.length - 1 ? "; " : "."}
+                              </span>
+                            );
+                          })}
+                        </div>
                         {notes.length > 0 && (
                           <div style={{ marginTop: 6, paddingLeft: 10, borderLeft: "2px solid #ede0da" }}>
                             {notes.map((d) => (
