@@ -384,9 +384,43 @@ export default function AdminPage() {
 
   if (!authed) {
     return (
-      <div style={S.page}>
-        <div style={S.loginCard}>
-          <div style={S.title}>Mission Control</div>
+      <div style={{
+        minHeight: "100vh",
+        background: "linear-gradient(160deg, #f3e0d9 0%, #e8c9bd 100%)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 20,
+        fontFamily: "'DM Sans', sans-serif",
+      }}>
+        <div style={{
+          width: "100%",
+          maxWidth: 380,
+          background: "#fffdfb",
+          border: "1px solid #e2c9bf",
+          borderRadius: 14,
+          padding: "40px 36px",
+          boxShadow: "0 24px 60px rgba(139, 74, 58, 0.18), 0 4px 12px rgba(139, 74, 58, 0.06)",
+        }}>
+          <div style={{
+            fontFamily: "'Cormorant Garamond', serif",
+            fontSize: 38,
+            color: "#8f4634",
+            letterSpacing: "0.01em",
+            lineHeight: 1.1,
+          }}>
+            Verona
+          </div>
+          <div style={{
+            fontSize: 11,
+            textTransform: "uppercase",
+            letterSpacing: "0.18em",
+            color: "#b78e84",
+            marginTop: 6,
+            marginBottom: 28,
+          }}>
+            The Balcony
+          </div>
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -394,21 +428,56 @@ export default function AdminPage() {
               setAuthed(true);
               setError(null);
             }}
-            style={{ marginTop: 16 }}
           >
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Password"
-              style={S.input}
+              style={{
+                width: "100%",
+                boxSizing: "border-box",
+                padding: "12px 14px",
+                fontSize: 14,
+                background: "#fbf3ef",
+                border: "1px solid #e2c9bf",
+                borderRadius: 8,
+                color: "#3d2722",
+                outline: "none",
+                fontFamily: "inherit",
+              }}
               autoFocus
             />
-            <button type="submit" style={{ ...S.primaryBtn, width: "100%", marginTop: 10 }}>
+            <button
+              type="submit"
+              style={{
+                width: "100%",
+                marginTop: 12,
+                padding: "12px 14px",
+                fontSize: 13,
+                fontWeight: 600,
+                letterSpacing: "0.04em",
+                background: "#a95d49",
+                color: "#fff",
+                border: "none",
+                borderRadius: 8,
+                cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+            >
               Enter
             </button>
           </form>
-          {error && <div style={S.errorText}>{error}</div>}
+          {error && (
+            <div style={{
+              color: "#b04f46",
+              fontSize: 12,
+              marginTop: 14,
+              textAlign: "center",
+            }}>
+              {error}
+            </div>
+          )}
         </div>
       </div>
     );
@@ -428,7 +497,7 @@ export default function AdminPage() {
     return (
       <div style={S.page}>
         <div style={{ ...S.card, margin: "80px auto", maxWidth: 520 }}>
-          Loading mission control...
+          Loading the balcony...
         </div>
       </div>
     );
@@ -448,7 +517,7 @@ export default function AdminPage() {
 
       <div style={{ position: "sticky", top: 0, zIndex: 50, background: "#efdcd5" }}>
         <div style={S.topBar}>
-          <div style={S.title}>Mission Control</div>
+          <div style={S.title}>The Balcony</div>
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={fetchData} style={S.secondaryBtn}>Refresh</button>
             <a href="/" style={{ ...S.secondaryBtn, textDecoration: "none" }}>Back to app</a>
@@ -1744,7 +1813,7 @@ function SessionSurface({
       <div
         style={{
           position: "sticky",
-          top: 142, // sits below Mission Control + tabs + breadcrumbs
+          top: 142, // sits below The Balcony + tabs + breadcrumbs
           zIndex: 40,
           background: "#efdcd5",
           margin: "-16px -20px 12px",
