@@ -2689,13 +2689,6 @@ const LEVEL_SUBTABS = [
   { id: "level3", key: "level_3", label: "3 — Trusted advisor" },
 ];
 
-const STAGE_SUBTABS = [
-  { id: "stage1", key: "stage_1", label: "1 — Building trust" },
-  { id: "stage2", key: "stage_2", label: "2 — Coaching" },
-  { id: "stage3", key: "stage_3", label: "3 — Good evenings" },
-  { id: "stage4", key: "stage_4", label: "4 — Something more" },
-];
-
 const ROOM_SUBTABS = [
   { id: "entrance",     key: "room_entrance",     label: "Entrance" },
   { id: "lounge",       key: "room_lounge",       label: "Lounge" },
@@ -2820,17 +2813,6 @@ function LevelsTab() {
   return (
     <div>
       <SubTabBar items={LEVEL_SUBTABS} value={sub} onChange={setSub} />
-      <PromptManager key={sub} promptKey={item.key} />
-    </div>
-  );
-}
-
-function StagesTab() {
-  const [sub, setSub] = useState("stage1");
-  const item = STAGE_SUBTABS.find((t) => t.id === sub);
-  return (
-    <div>
-      <SubTabBar items={STAGE_SUBTABS} value={sub} onChange={setSub} />
       <PromptManager key={sub} promptKey={item.key} />
     </div>
   );
