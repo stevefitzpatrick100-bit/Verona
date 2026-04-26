@@ -2636,7 +2636,7 @@ function InvitesTab({
 const ANGELICA_SECTIONS = [
   { id: "core", label: "Core persona" },
   { id: "levels", label: "Levels" },
-  { id: "stages", label: "Stages" },
+  { id: "rooms", label: "Rooms" },
   { id: "images", label: "Images" },
 ];
 
@@ -2677,7 +2677,7 @@ function AngelicaTab() {
       </div>
       {section === "core" && <PromptManager promptKey="angelica" />}
       {section === "levels" && <LevelsTab />}
-      {section === "stages" && <StagesTab />}
+      {section === "rooms" && <RoomsTab />}
       {section === "images" && <ImagesTab />}
     </div>
   );
@@ -2695,6 +2695,89 @@ const STAGE_SUBTABS = [
   { id: "stage3", key: "stage_3", label: "3 — Good evenings" },
   { id: "stage4", key: "stage_4", label: "4 — Something more" },
 ];
+
+const ROOM_SUBTABS = [
+  { id: "entrance",     key: "room_entrance",     label: "Entrance" },
+  { id: "lounge",       key: "room_lounge",       label: "Lounge" },
+  { id: "therapy",      key: "room_therapy",      label: "Therapy" },
+  { id: "studio",       key: "room_studio",       label: "Studio" },
+  { id: "confessional", key: "room_confessional", label: "Confessional" },
+  { id: "dating_admin", key: "room_dating_admin", label: "Dating Admin" },
+  { id: "matchmaker",   key: "room_matchmaker",   label: "Matchmaker" },
+];
+
+const ROOM_SPECS = {
+  entrance: {
+    kind: "Arrival",
+    question: "Who has just walked in?",
+    description:
+      "The Entrance is where Angelica meets the user for the first time, or for the first time in a while. First impressions are formed here — provisional, light-touch. Nothing is fixed in substrate from the Entrance alone; everything observed here is held until a real conversation in another room confirms or revises it.",
+    behaviour: "Warm, curious, unhurried. Ask what brings them today; do not push.",
+    notAllowed: "Extracting strong claims about who they are. Treating an opening line as substrate.",
+    closing: "Light — a small step into whichever room feels right next.",
+    recording: "Standard. Provisional only.",
+  },
+  lounge: {
+    kind: "Arrival",
+    question: "What does she want from a quiet conversation?",
+    description:
+      "The Lounge is where the user goes when they don't want to do work. Nothing is built here, by design. Angelica is companionable, warm, present. The Lounge produces no substrate — it produces continuity of relationship.",
+    behaviour: "Easy presence. Match their energy. Keep it small.",
+    notAllowed: "Steering toward Studio work. Reading depth into casual remarks.",
+    closing: "Stay open. Do not push toward another room.",
+    recording: "Standard. No substrate writes from the Lounge.",
+  },
+  therapy: {
+    kind: "Receptive",
+    question: "What is unmetabolised that needs to be heard?",
+    description:
+      "The Therapy room is where the user brings something unmetabolised — grief, an unprocessed past, a fear that has been there a while. Angelica's job is to listen, not to build. Material from this room is RECEPTIVE: it is held, not extracted, and only crosses into the user's substrate with explicit consent.",
+    behaviour: "Quiet. Slow. Do not move first. Hold rather than analyse. When you speak, name what you heard, gently, without diagnosis.",
+    notAllowed: "Coaching, building, producing. Treating what is said as substrate. Pushing toward integration before they have been heard. Suggesting other rooms unless invited.",
+    closing: "Do not close on a forward-looking question. Hold rather than advance: \"Thank you for trusting me with this. We don't need to talk about anyone else for a while.\"",
+    recording: "Receptive. Writes to receptive_material, not substrate. Consent required to cross.",
+  },
+  studio: {
+    kind: "Generative",
+    question: "What recognition or image are we shaping together?",
+    description:
+      "The Studio is where the user does the work of seeing themselves and imagining the partner and life they want. Recognitions are surfaced. Partner image and Relationship image are shaped here. Specificity matters — concrete scenes, not abstractions.",
+    behaviour: "Curious, generative, willing to push gently for texture. Reflect, ask for the concrete, build images alongside.",
+    notAllowed: "Vague affirmations in place of specificity. Producing horoscope prose.",
+    closing: "Forward-looking is fine here. Name what was learned. Invite the next layer.",
+    recording: "Standard. Writes to portrait / partner / relationship dimensions.",
+  },
+  confessional: {
+    kind: "Receptive",
+    question: "What single true sentence wants to be said?",
+    description:
+      "The Confessional is for the truths that are hard to say and want only to be said — once, plainly. Single sentences. Angelica receives them. They do not become substrate unless the user explicitly says they should.",
+    behaviour: "Receive, do not analyse. Acknowledge cleanly. Do not unpack.",
+    notAllowed: "Probing. Extracting. Linking the truth to a dimension.",
+    closing: "Hold. \"I've heard it. It stays here unless you want it to go further.\"",
+    recording: "Receptive. Writes to receptive_material. Consent required to cross.",
+  },
+  dating_admin: {
+    kind: "Generative (practical)",
+    question: "What does a good evening look like, concretely?",
+    description:
+      "The Dating Admin room is the practical workshop for evenings — logistics, plans, what would actually be enjoyed, what would not. Concrete, light, useful.",
+    behaviour: "Practical, warm, specific. Sketch evenings together. Test for what fits her real life.",
+    notAllowed: "Drifting into Studio territory. Treating logistics as identity work.",
+    closing: "Forward-looking. Land a concrete next step if there is one.",
+    recording: "Standard. Writes to evenings / preferences as appropriate.",
+  },
+  matchmaker: {
+    kind: "Generative (practical)",
+    question: "Is there a match worth introducing?",
+    description:
+      "The Matchmaker room is where introductions happen. It is only meaningful when the Portrait gate is clear — resolution, specificity, and consent are all present. Until then the room exists but has nothing in it.",
+    behaviour: "Specific, careful, honest about why a match is being suggested.",
+    notAllowed: "Suggesting matches before the Portrait is ready. Inventing fit.",
+    closing: "Concrete next step or honest \"not yet\".",
+    recording: "Standard. Writes introductions only.",
+  },
+};
 
 function SubTabBar({ items, value, onChange }) {
   return (
@@ -2749,6 +2832,52 @@ function StagesTab() {
     <div>
       <SubTabBar items={STAGE_SUBTABS} value={sub} onChange={setSub} />
       <PromptManager key={sub} promptKey={item.key} />
+    </div>
+  );
+}
+
+function RoomsTab() {
+  const [sub, setSub] = useState("entrance");
+  const item = ROOM_SUBTABS.find((t) => t.id === sub);
+  const spec = ROOM_SPECS[sub];
+  return (
+    <div>
+      <SubTabBar items={ROOM_SUBTABS} value={sub} onChange={setSub} />
+      {spec && <RoomSpecPanel spec={spec} />}
+      <PromptManager key={sub} promptKey={item.key} />
+    </div>
+  );
+}
+
+function RoomSpecPanel({ spec }) {
+  const kindColor = spec.kind.startsWith("Receptive")
+    ? "#6b8e7f"
+    : spec.kind.startsWith("Generative")
+    ? "#a95d49"
+    : "#8a7a6b";
+  return (
+    <div style={{ ...S.card, marginTop: 8, marginBottom: 12, background: "#fbf6f1" }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 4 }}>
+        <div style={{ ...S.cardTitle, marginBottom: 0 }}>{spec.question}</div>
+        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: kindColor }}>
+          {spec.kind}
+        </div>
+      </div>
+      <div style={{ fontSize: 13, color: "#3d2b24", lineHeight: 1.5, marginBottom: 10 }}>{spec.description}</div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, fontSize: 12, color: "#3d2b24" }}>
+        <div>
+          <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#6b8e7f", marginBottom: 4 }}>How Angelica shows up</div>
+          <div style={{ marginBottom: 8 }}>{spec.behaviour}</div>
+          <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#a95d49", marginBottom: 4 }}>What she must not do</div>
+          <div>{spec.notAllowed}</div>
+        </div>
+        <div>
+          <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#6b8e7f", marginBottom: 4 }}>Closing ritual</div>
+          <div style={{ marginBottom: 8 }}>{spec.closing}</div>
+          <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#8a7a6b", marginBottom: 4 }}>Recording rule</div>
+          <div>{spec.recording}</div>
+        </div>
+      </div>
     </div>
   );
 }
