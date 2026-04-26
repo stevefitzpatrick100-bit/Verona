@@ -1123,6 +1123,34 @@ function resolutionBreakdown(dims) {
   return { total, counts, touched };
 }
 
+function NarrativeBlock({ state, onRegenerate }) {
+  const loading = state?.loading;
+  const text = state?.text;
+  const error = state?.error;
+  const question = state?.question;
+  return (
+    <div style={{ marginBottom: 14, padding: "10px 12px", background: "#f9f3ef", borderRadius: 6, border: "1px solid #ede0da" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+        <div style={{ fontSize: 10, color: "#a95d49", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+          {question || "Angelica's answer"}
+        </div>
+        <button
+          onClick={onRegenerate}
+          disabled={loading}
+          style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, border: "1px solid #d6c4bb", background: "#fff", color: "#5a4540", cursor: loading ? "default" : "pointer" }}
+        >
+          {loading ? "writing…" : (text ? "regenerate" : "generate")}
+        </button>
+      </div>
+      {loading && !text && <div style={{ fontSize: 12, color: "#888", fontStyle: "italic" }}>Angelica is writing…</div>}
+      {error && <div style={{ fontSize: 12, color: "#a95d49" }}>Error: {error}</div>}
+      {text && (
+        <div style={{ fontSize: 13, color: "#3d2b24", lineHeight: 1.65, whiteSpace: "pre-wrap" }}>{text}</div>
+      )}
+    </div>
+  );
+}
+
 function SubstrateDiffusionCard({ title, dims, totalExpected, emptyNote, children }) {
   const { total, counts, touched } = resolutionBreakdown(dims);
   const pct = totalExpected > 0 ? Math.round((touched / totalExpected) * 100) : 0;
@@ -1174,6 +1202,29 @@ function SubstrateDiffusionCard({ title, dims, totalExpected, emptyNote, childre
 
 function UserOverview({ data, user, sessions, onOpenSession }) {
   const [substrateOpen, setSubstrateOpen] = useState(null); // "portrait" | "partner" | "relationship"
+  const [narratives, setNarratives] = useState({}); // { portrait: { text, question, loading, error } }
+  const fetchNarrative = useCallback(async (kind) => {
+    setNarratives((n) => ({ ...n, [kind]: { ...(n[kind] || {}), loading: true, error: null } }));
+    try {
+      const pw = sessionStorage.getItem("admin-pw") || "";
+      const res = await fetch("/api/admin/narrative", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", authorization: pw },
+        body: JSON.stringify({ userId: user.id, kind }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Failed");
+      setNarratives((n) => ({ ...n, [kind]: { text: json.text, question: json.question, loading: false } }));
+    } catch (e) {
+      setNarratives((n) => ({ ...n, [kind]: { ...(n[kind] || {}), loading: false, error: e.message } }));
+    }
+  }, [user.id]);
+  useEffect(() => {
+    if (!substrateOpen) return;
+    if (narratives[substrateOpen]?.text || narratives[substrateOpen]?.loading) return;
+    fetchNarrative(substrateOpen);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [substrateOpen]);
   const portrait = (data.dimensions || []).filter((d) => d.user_id === user.id);
   const partner = (data.partnerDimensions || []).filter((d) => d.user_id === user.id);
   const relationship = (data.relationshipDimensions || []).filter((d) => d.user_id === user.id);
@@ -1297,6 +1348,7 @@ function UserOverview({ data, user, sessions, onOpenSession }) {
                 <div style={{ fontSize: 11, color: "#a95d49", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
                   Written portrait
                 </div>
+                <NarrativeBlock state={narratives.portrait} onRegenerate={() => fetchNarrative("portrait")} />
                 {essentialTruth?.text ? (
                   <div style={{ ...S.quote, marginBottom: 12 }}>"{essentialTruth.text}"</div>
                 ) : (
@@ -1356,6 +1408,7 @@ function UserOverview({ data, user, sessions, onOpenSession }) {
                 <div style={{ fontSize: 11, color: "#a95d49", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
                   Partner image — written
                 </div>
+                <NarrativeBlock state={narratives.partner} onRegenerate={() => fetchNarrative("partner")} />
                 {(() => {
                   const visible = partner.filter((d) => d.resolution && d.resolution !== "unvisited");
                   if (!visible.length) return <div style={S.mutedText}>Nothing gathered yet.</div>;
@@ -1409,6 +1462,7 @@ function UserOverview({ data, user, sessions, onOpenSession }) {
                 <div style={{ fontSize: 11, color: "#a95d49", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
                   Relationship image — written
                 </div>
+                <NarrativeBlock state={narratives.relationship} onRegenerate={() => fetchNarrative("relationship")} />
                 {(() => {
                   const visible = relationship.filter((d) => d.resolution && d.resolution !== "unvisited");
                   if (!visible.length) return <div style={S.mutedText}>Nothing gathered yet.</div>;

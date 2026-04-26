@@ -1,0 +1,42 @@
+{
+  "appId": "com.verona.app",
+  "appName": "Verona",
+  "webDir": "www",
+  "server": {
+    "url": "https://verona-demo.vercel.app",
+    "cleartext": false,
+    "androidScheme": "https",
+    "iosScheme": "https",
+    "allowNavigation": [
+      "verona-demo.vercel.app",
+      "*.supabase.co"
+    ]
+  },
+  "ios": {
+    "contentInset": "always",
+    "scrollEnabled": true,
+    "limitsNavigationsToAppBoundDomains": false,
+    "preferredContentMode": "mobile",
+    "backgroundColor": "#FAF0EE"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 1500,
+      "launchAutoHide": true,
+      "launchFadeOutDuration": 300,
+      "backgroundColor": "#FAF0EE",
+      "iosSpinnerStyle": "small",
+      "spinnerColor": "#C4A08A",
+      "showSpinner": false
+    },
+    "StatusBar": {
+      "style": "DARK",
+      "backgroundColor": "#FAF0EE",
+      "overlaysWebView": false
+    },
+    "Keyboard": {
+      "resize": "native",
+      "resizeOnFullScreen": true
+    }
+  }
+}
