@@ -2,6 +2,8 @@ import { getSupabaseServer } from "@/lib/supabase";
 import { ANGELICA_SYSTEM_PROMPT, PORTRAIT_ANALYSIS_PROMPT } from "@/lib/prompts";
 import { buildPortraitContext } from "@/lib/portrait";
 import { applyPortraitUpdate } from "@/lib/portrait-update";
+import { buildCQCoachingContext } from "@/lib/cq-coaching";
+import { runObserver } from "@/lib/observer";
 
 // Cache the active prompt for 60 seconds to avoid a DB hit on every message
 let _promptCache = null;
@@ -48,6 +50,7 @@ export async function POST(req) {
   try {
     // Build portrait context from database
     const portraitContext = await buildPortraitContext(supabase, userId);
+    const cqCoaching = await buildCQCoachingContext(supabase, userId);
 
     // Check if user has a specific prompt version assigned
     const { data: userData } = await supabase
@@ -65,7 +68,10 @@ export async function POST(req) {
 
     // Build full system prompt with portrait context
     const activePrompt = await getActiveAngelicaPrompt(supabase, userData?.prompt_version_id);
-    const systemPrompt = activePrompt.content + "\n\n## Portrait & Memory\n\n" + portraitContext;
+    let systemPrompt = activePrompt.content + "\n\n## Portrait & Memory\n\n" + portraitContext;
+    if (cqCoaching) {
+      systemPrompt += "\n\n" + cqCoaching;
+    }
     const promptLabel = activePrompt.label;
 
     // Call Anthropic API for conversation
@@ -106,9 +112,12 @@ export async function POST(req) {
         .eq("id", sessionId);
     }
 
-    // Run portrait analysis in background (non-blocking)
+    // Run portrait analysis + observer in parallel, both non-blocking
     runPortraitAnalysis(supabase, userId, sessionNumber, messages, reply).catch(
       (e) => console.error("Portrait analysis failed:", e)
+    );
+    runObserver(supabase, { userId, sessionId, messages, lastReply: reply }).catch(
+      (e) => console.error("Observer failed:", e)
     );
 
     return Response.json({ text: reply, promptVersion: promptLabel });

@@ -1,14 +1,96 @@
 "use client";
-import { useState, useEffect, useCallback, useMemo } from "react";
 
-// =====================================================================
-// VERONA — Admin
-// Three views + Invites. See Verona_Admin_PRD_v1.md for the purpose.
-// This version adds an inviter-name field to the Invites tab.
-// =====================================================================
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+
+const TOP_TABS = [
+  { id: "dashboard", label: "Dashboard" },
+  { id: "users", label: "Users" },
+  { id: "invites", label: "Invites" },
+  { id: "angelica", label: "Angelica" },
+];
+
+const USER_TABS = [
+  { id: "overview", label: "Overview" },
+  { id: "substrate", label: "Substrate" },
+  { id: "conversations", label: "Conversations" },
+  { id: "cq", label: "CQ" },
+];
+
+const SESSION_PANES = [
+  { id: "substrate", label: "Substrate snapshot" },
+  { id: "cq", label: "CQ verdict" },
+  { id: "notes", label: "Notes" },
+];
+
+const CQ_GROUPS = [
+  {
+    label: "Relationship quality",
+    keys: ["honesty", "trust", "safety", "investment"],
+  },
+  {
+    label: "Experience quality",
+    keys: ["anticipation", "momentum", "progress_belief", "frustration"],
+  },
+  {
+    label: "Engagement signal",
+    keys: ["return_signal", "depth_signal", "arrival_state"],
+  },
+  {
+    label: "Direction signal",
+    keys: ["orientation", "goal_aliveness", "agency", "dependency_risk"],
+  },
+];
+
+const CQ_OVERVIEW_KEYS = ["honesty", "depth_signal", "momentum", "frustration", "return_signal"];
+
+function labelForStage(stage) {
+  const map = {
+    1: "Arrival",
+    2: "Knowing",
+    3: "Discernment",
+    4: "Reciprocity",
+    5: "Commitment",
+  };
+  const n = Number(stage);
+  return Number.isFinite(n) && map[n] ? `${n} - ${map[n]}` : "-";
+}
+
+function labelForLevel(level) {
+  const map = {
+    1: "Level 1",
+    2: "Level 2",
+    3: "Level 3",
+  };
+  const n = Number(level);
+  return Number.isFinite(n) && map[n] ? map[n] : "-";
+}
+
+function niceLabel(key) {
+  return key
+    .split("_")
+    .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+    .join(" ");
+}
+
+function formatDate(ts) {
+  if (!ts) return "-";
+  return new Date(ts).toLocaleDateString([], {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function formatTime(ts) {
+  if (!ts) return "";
+  return new Date(ts).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
 function timeAgo(ts) {
-  if (!ts) return "—";
+  if (!ts) return "-";
   const diff = Date.now() - new Date(ts).getTime();
   const mins = Math.floor(diff / 60000);
   if (mins < 1) return "just now";
@@ -17,67 +99,152 @@ function timeAgo(ts) {
   if (hrs < 24) return `${hrs}h ago`;
   const days = Math.floor(hrs / 24);
   if (days < 30) return `${days}d ago`;
-  return `${Math.floor(days / 30)}mo ago`;
-}
-
-function formatDate(ts) {
-  if (!ts) return "—";
-  return new Date(ts).toLocaleDateString([], { month: "short", day: "numeric" });
-}
-
-function formatTime(ts) {
-  if (!ts) return "";
-  return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const mos = Math.floor(days / 30);
+  return `${mos}mo ago`;
 }
 
 function durationMin(startedAt, endedAt) {
   if (!startedAt) return null;
   const end = endedAt ? new Date(endedAt) : new Date();
-  return Math.round((end - new Date(startedAt)) / 60000);
+  return Math.max(0, Math.round((end - new Date(startedAt)) / 60000));
 }
 
 function userStatus(lastActiveTs) {
-  if (!lastActiveTs) return { label: "never", color: "#555" };
+  if (!lastActiveTs) return { label: "never", color: "#6b6a67" };
   const days = (Date.now() - new Date(lastActiveTs).getTime()) / 86400000;
-  if (days < 3) return { label: "active", color: "#7cb87c" };
-  if (days < 14) return { label: "recent", color: "#d4a84a" };
-  return { label: "dormant", color: "#555" };
+  if (days < 3) return { label: "active", color: "#82bd8b" };
+  if (days < 14) return { label: "recent", color: "#d0a45c" };
+  return { label: "dormant", color: "#6b6a67" };
 }
 
-export default function Admin() {
+function cqOverall(row) {
+  if (!row) return null;
+  const values = [];
+  for (const g of CQ_GROUPS) {
+    for (const key of g.keys) {
+      if (row[key] != null) values.push(Number(row[key]));
+    }
+  }
+  if (!values.length) return null;
+  return values.reduce((a, b) => a + b, 0) / values.length;
+}
+
+// Deterministic CQ → coaching nudge mapping. Mirrors lib/cq-coaching.js.
+// Edit these in lockstep with the chat-side rules.
+const CQ_NUDGES = {
+  honesty: { low: "Honesty is shaky. Soften, give permission, don't probe." },
+  trust: {
+    low: "Trust is low. Stay in Trust phase. Keep it ordinary, no interpretations.",
+    high: "Trust is strong. Permission to go deeper, name patterns.",
+  },
+  safety: { low: "Safety is low. Pull back. Be warmer, lighter, no probing." },
+  investment: { low: "Investment is thin. Return to what lit them up earlier." },
+  anticipation: { low: "Anticipation is flat. Surprise with specificity, callbacks." },
+  momentum: { low: "Momentum dragging. Shorten responses. Lighter touch." },
+  progress_belief: { low: "They don't feel this is going anywhere. Land precisely." },
+  frustration: { high: "Frustration rising. Ease off. Change tack. Acknowledge, give space." },
+  return_signal: { low: "They may not come back. End on something that lingers." },
+  depth_signal: {
+    low: "Staying surface-level. Invite specificity if trust permits.",
+    high: "They are going deep. Stay with them. Let silence work.",
+  },
+  arrival_state: { low: "They arrived flat. Match it gently. Don't try to lift them." },
+  orientation: { low: "Disoriented. Don't push direction. Let them find the thread." },
+  goal_aliveness: { low: "Goal feels distant. Don't reference matching or outcomes." },
+  agency: { low: "Agency low. Hand control back. Ask what they want to talk about." },
+  dependency_risk: { high: "Dependency risk rising. Don't over-nurture. Create distance." },
+};
+const CQ_LOW = 4;
+const CQ_HIGH = 8;
+function cqNudgesFor(row) {
+  if (!row) return [];
+  const out = [];
+  for (const [key, n] of Object.entries(CQ_NUDGES)) {
+    const v = row[key];
+    if (v == null) continue;
+    const num = Number(v);
+    if (num <= CQ_LOW && n.low) out.push({ key, value: num, level: "low", text: n.low });
+    else if (num >= CQ_HIGH && n.high) out.push({ key, value: num, level: "high", text: n.high });
+  }
+  return out;
+}
+
+function stageTransitionsForSession(stageTransitions, session) {
+  if (!session) return [];
+  return stageTransitions.filter((t) => {
+    const bySessionId = t.session_id && t.session_id === session.id;
+    const bySessionNumber =
+      t.session_number != null &&
+      session.session_number != null &&
+      Number(t.session_number) === Number(session.session_number);
+    return bySessionId || bySessionNumber;
+  });
+}
+
+export default function AdminPage() {
   const [authed, setAuthed] = useState(false);
   const [password, setPassword] = useState("");
   const [error, setError] = useState(null);
   const [data, setData] = useState(null);
-  const [tab, setTab] = useState("users");
+  const [loading, setLoading] = useState(false);
+
+  const [topTab, setTopTab] = useState("dashboard");
+  const [conversationsRootView, setConversationsRootView] = useState("dashboard");
   const [selectedUserId, setSelectedUserId] = useState(null);
+  const [selectedUserTab, setSelectedUserTab] = useState("overview");
   const [selectedSessionId, setSelectedSessionId] = useState(null);
+  const [sessionPaneById, setSessionPaneById] = useState({});
+
   const [newInviteName, setNewInviteName] = useState("");
   const [newInviterName, setNewInviterName] = useState("");
 
+  const [sessionNoteDraft, setSessionNoteDraft] = useState("");
+  const [messageNoteDraft, setMessageNoteDraft] = useState({});
+
   useEffect(() => {
     const saved = sessionStorage.getItem("admin-pw");
-    if (saved) { setPassword(saved); setAuthed(true); }
+    if (!saved) return;
+    setPassword(saved);
+    setAuthed(true);
   }, []);
 
   const fetchData = useCallback(async () => {
     const pw = sessionStorage.getItem("admin-pw");
     if (!pw) return;
+    setLoading(true);
     try {
       const res = await fetch("/api/admin", { headers: { authorization: pw } });
       if (res.status === 401) {
-        setAuthed(false); sessionStorage.removeItem("admin-pw");
-        setError("Wrong password"); return;
+        setAuthed(false);
+        sessionStorage.removeItem("admin-pw");
+        setError("Wrong password");
+        setLoading(false);
+        return;
       }
       const json = await res.json();
       if (json.error) throw new Error(json.error);
-      setData(json); setError(null);
-    } catch (e) { setError(e.message); }
+      setData(json);
+      setError(null);
+    } catch (e) {
+      setError(e.message || "Failed to load admin data");
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
     if (authed) fetchData();
   }, [authed, fetchData]);
+
+  const currentUser = useMemo(() => {
+    if (!data || !selectedUserId) return null;
+    return data.users.find((u) => u.id === selectedUserId) || null;
+  }, [data, selectedUserId]);
+
+  const currentSession = useMemo(() => {
+    if (!data || !selectedSessionId) return null;
+    return data.sessions.find((s) => s.id === selectedSessionId) || null;
+  }, [data, selectedSessionId]);
 
   async function createInvite() {
     if (!newInviteName.trim()) return;
@@ -94,6 +261,7 @@ export default function Admin() {
     setNewInviterName("");
     fetchData();
   }
+
   async function deleteInvite(id) {
     const pw = sessionStorage.getItem("admin-pw");
     await fetch("/api/invite", {
@@ -103,6 +271,7 @@ export default function Admin() {
     });
     fetchData();
   }
+
   async function reinvite(id) {
     const pw = sessionStorage.getItem("admin-pw");
     await fetch("/api/invite", {
@@ -113,131 +282,220 @@ export default function Admin() {
     fetchData();
   }
 
-  function switchTab(newTab) {
-    setTab(newTab);
+  async function addSessionNote(sessionId) {
+    if (!sessionNoteDraft.trim()) return;
+    const pw = sessionStorage.getItem("admin-pw");
+    const res = await fetch("/api/admin", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", authorization: pw },
+      body: JSON.stringify({
+        action: "add_observer_note",
+        sessionId,
+        note: sessionNoteDraft.trim(),
+        rubricVersion: "operator-notes-v1",
+        modelIdentifier: "operator",
+      }),
+    });
+    const json = await res.json();
+    if (json.error) {
+      setError(json.error);
+      return;
+    }
+    setSessionNoteDraft("");
+    fetchData();
+  }
+
+  async function addMessageNote(messageId) {
+    const note = messageNoteDraft[messageId] || "";
+    if (!note.trim()) return;
+    const pw = sessionStorage.getItem("admin-pw");
+    const res = await fetch("/api/admin", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", authorization: pw },
+      body: JSON.stringify({
+        action: "add_message_note",
+        messageId,
+        note: note.trim(),
+      }),
+    });
+    const json = await res.json();
+    if (json.error) {
+      setError(json.error);
+      return;
+    }
+    setMessageNoteDraft((prev) => ({ ...prev, [messageId]: "" }));
+    fetchData();
+  }
+
+  function onTopTabChange(nextTab) {
+    setTopTab(nextTab);
+    if (nextTab === "dashboard") {
+      setConversationsRootView("dashboard");
+      setSelectedSessionId(null);
+      setSelectedUserId(null);
+      setSelectedUserTab("overview");
+      return;
+    }
+    if (nextTab === "users") {
+      setConversationsRootView("adoption");
+      setSelectedSessionId(null);
+      setSelectedUserId(null);
+      setSelectedUserTab("overview");
+      return;
+    }
+    setSelectedSessionId(null);
     setSelectedUserId(null);
+    setSelectedUserTab("overview");
+  }
+
+  function openUser(userId) {
+    setTopTab("users");
+    setConversationsRootView("adoption");
+    setSelectedUserId(userId);
+    setSelectedUserTab("overview");
     setSelectedSessionId(null);
   }
 
-  async function deleteUser(userId) {
-    const pw = sessionStorage.getItem("admin-pw");
-    const res = await fetch("/api/admin", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json", authorization: pw },
-      body: JSON.stringify({ userId }),
-    });
-    if (!res.ok) {
-      const json = await res.json();
-      throw new Error(json.error || "Delete failed");
-    }
+  function openUserTab(tabId) {
+    setSelectedUserTab(tabId);
+    setSelectedSessionId(null);
+  }
+
+  function openSession(sessionId) {
+    setSelectedUserTab("conversations");
+    setSelectedSessionId(sessionId);
+    setSessionPaneById((prev) => ({
+      ...prev,
+      [sessionId]: prev[sessionId] || "substrate",
+    }));
+  }
+
+  function openAllConversations() {
+    setTopTab("users");
+    setConversationsRootView("all-conversations");
     setSelectedUserId(null);
     setSelectedSessionId(null);
-    fetchData();
+    setSelectedUserTab("overview");
+  }
+
+  function setSessionPane(sessionId, paneId) {
+    setSessionPaneById((prev) => ({ ...prev, [sessionId]: paneId }));
   }
 
   if (!authed) {
     return (
       <div style={S.page}>
-        <div style={S.loginBox}>
+        <div style={S.loginCard}>
           <div style={S.title}>Mission Control</div>
-          <form onSubmit={(e) => { e.preventDefault(); sessionStorage.setItem("admin-pw", password); setAuthed(true); setError(null); }} style={{ marginTop: 20 }}>
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" style={S.input} autoFocus />
-            <button type="submit" style={{ ...S.btn, marginTop: 12, width: "100%" }}>Enter</button>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              sessionStorage.setItem("admin-pw", password);
+              setAuthed(true);
+              setError(null);
+            }}
+            style={{ marginTop: 16 }}
+          >
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Password"
+              style={S.input}
+              autoFocus
+            />
+            <button type="submit" style={{ ...S.primaryBtn, width: "100%", marginTop: 10 }}>
+              Enter
+            </button>
           </form>
-          {error && <div style={{ color: "#E24B4A", marginTop: 12, fontSize: 12 }}>{error}</div>}
+          {error && <div style={S.errorText}>{error}</div>}
         </div>
       </div>
     );
   }
 
-  if (error) return <div style={S.page}><div style={S.errorBox}>Error: {error}</div></div>;
-  if (!data) return <div style={S.page}><div style={S.loadingBox}>Loading mission control...</div></div>;
+  if (error && !data) {
+    return (
+      <div style={S.page}>
+        <div style={{ ...S.card, margin: "80px auto", maxWidth: 600 }}>
+          <div style={S.errorText}>{error}</div>
+        </div>
+      </div>
+    );
+  }
 
-  const currentUser = selectedUserId ? data.users.find((u) => u.id === selectedUserId) : null;
-  const currentSession = selectedSessionId ? data.sessions.find((s) => s.id === selectedSessionId) : null;
+  if (!data || loading) {
+    return (
+      <div style={S.page}>
+        <div style={{ ...S.card, margin: "80px auto", maxWidth: 520 }}>
+          Loading mission control...
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={S.page}>
       <style>{`
         #app-shell { max-width: 100% !important; box-shadow: none !important; }
-        .va-grid { display: grid; grid-template-columns: 1fr 300px; gap: 24px; margin-top: 20px; }
-        .va-grid-wide { display: grid; grid-template-columns: 1fr 340px; gap: 24px; margin-top: 20px; }
-        .va-table-scroll { overflow-x: auto; }
+        .va-table-row:hover { background: #f6e7e1 !important; }
         @media (max-width: 760px) {
-          .va-grid, .va-grid-wide { grid-template-columns: 1fr; }
+          .va-session-grid { grid-template-columns: 1fr !important; }
+          .va-substrate-grid { grid-template-columns: 1fr !important; }
+          .va-cq-grid { grid-template-columns: 1fr !important; }
         }
       `}</style>
-      <div style={S.topBar}>
-        <div style={S.title}>Mission Control</div>
-        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-          <button onClick={fetchData} style={S.btn}>Refresh</button>
-          <a href="/" style={{ ...S.btn, textDecoration: "none" }}>← App</a>
+
+      <div style={{ position: "sticky", top: 0, zIndex: 50, background: "#efdcd5" }}>
+        <div style={S.topBar}>
+          <div style={S.title}>Mission Control</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={fetchData} style={S.secondaryBtn}>Refresh</button>
+            <a href="/" style={{ ...S.secondaryBtn, textDecoration: "none" }}>Back to app</a>
+          </div>
         </div>
+
+        <div style={S.tabStrip}>
+          {TOP_TABS.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => onTopTabChange(t.id)}
+              style={{ ...S.tabBtn, ...(topTab === t.id ? S.tabBtnActive : null) }}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        <Breadcrumbs
+          topTab={topTab}
+          user={currentUser}
+          conversationsRootView={conversationsRootView}
+          selectedUserTab={selectedUserTab}
+          session={currentSession}
+          onGoAdoption={() => {
+          setConversationsRootView("adoption");
+          setSelectedUserId(null);
+          setSelectedSessionId(null);
+          setSelectedUserTab("overview");
+        }}
+        onGoAllConversations={openAllConversations}
+        onGoUser={() => setSelectedSessionId(null)}
+        onGoUserTab={openUserTab}
+      />
       </div>
 
-      <div style={S.tabBar}>
-        <button onClick={() => switchTab("invites")} style={{ ...S.tab, ...(tab === "invites" ? S.tabActive : {}) }}>Invites</button>
-        <button onClick={() => switchTab("users")} style={{ ...S.tab, ...(tab === "users" ? S.tabActive : {}) }}>Users</button>
-        <button onClick={() => switchTab("conversations")} style={{ ...S.tab, ...(tab === "conversations" ? S.tabActive : {}) }}>Conversations</button>
-        <button onClick={() => switchTab("prompts")} style={{ ...S.tab, ...(tab === "prompts" ? S.tabActive : {}) }}>Prompts</button>
-      </div>
-
-      {tab === "users" && (
-        <>
-          <div style={S.crumb}>
-            <span onClick={() => { setSelectedUserId(null); setSelectedSessionId(null); }} style={S.crumbLink}>Users</span>
-            {currentUser && (
-              <>
-                <span style={S.crumbSep}>›</span>
-                <span onClick={() => setSelectedSessionId(null)} style={S.crumbLink}>
-                  {currentUser.display_name || currentUser.id.slice(0, 8)}
-                </span>
-              </>
-            )}
-            {currentSession && (
-              <>
-                <span style={S.crumbSep}>›</span>
-                <span style={{ ...S.crumbLink, color: "#e0ddd8", cursor: "default" }}>
-                  Session #{currentSession.session_number}
-                </span>
-              </>
-            )}
-          </div>
-          {!selectedUserId && <Adoption data={data} onSelectUser={(id) => setSelectedUserId(id)} />}
-          {selectedUserId && !selectedSessionId && (
-            <UserProfile data={data} userId={selectedUserId} onSelectSession={(id) => setSelectedSessionId(id)} onDeleteUser={deleteUser} />
-          )}
-          {selectedUserId && selectedSessionId && (
-            <SessionAnalysis data={data} userId={selectedUserId} sessionId={selectedSessionId} />
-          )}
-        </>
+      {!!data.missingTables?.length && (
+        <div style={S.warnBar}>
+          Missing optional tables: {data.missingTables.join(", ")}. Related panes show partial data.
+        </div>
       )}
 
-      {tab === "conversations" && (
-        <>
-          <div style={S.crumb}>
-            <span onClick={() => { setSelectedSessionId(null); setSelectedUserId(null); }} style={S.crumbLink}>Conversations</span>
-            {currentSession && (
-              <>
-                <span style={S.crumbSep}>›</span>
-                <span style={{ ...S.crumbLink, color: "#e0ddd8", cursor: "default" }}>
-                  {currentUser?.display_name || currentUser?.id.slice(0, 8)} · Session #{currentSession.session_number}
-                </span>
-              </>
-            )}
-          </div>
-          {!selectedSessionId && (
-            <ConversationsList data={data} onSelectSession={(sessionId, userId) => { setSelectedSessionId(sessionId); setSelectedUserId(userId); }} />
-          )}
-          {selectedSessionId && (
-            <SessionAnalysis data={data} userId={selectedUserId} sessionId={selectedSessionId} />
-          )}
-        </>
-      )}
+      {error && <div style={{ ...S.warnBar, color: "#f3b0aa" }}>{error}</div>}
 
-      {tab === "invites" && (
-        <Invites
-          invites={data.invites}
+      {topTab === "invites" && (
+        <InvitesTab
+          invites={data.invites || []}
           newInviteName={newInviteName}
           setNewInviteName={setNewInviteName}
           newInviterName={newInviterName}
@@ -248,14 +506,1763 @@ export default function Admin() {
         />
       )}
 
-      {tab === "prompts" && <Prompts />}
+      {topTab === "dashboard" && (
+        <div style={S.section}>
+          <DashboardLanding
+            data={data}
+            onOpenUsers={() => {
+              setTopTab("users");
+              setConversationsRootView("adoption");
+            }}
+            onOpenAllConversations={() => {
+              setTopTab("users");
+              setConversationsRootView("all-conversations");
+            }}
+            onOpenInvites={() => setTopTab("invites")}
+            onOpenAngelica={() => setTopTab("angelica")}
+            onOpenUser={openUser}
+          />
+        </div>
+      )}
+
+      {topTab === "users" && !selectedUserId && (
+        <div style={S.section}>
+          <RootConversationSwitch
+            value={conversationsRootView}
+            onChange={setConversationsRootView}
+          />
+          {conversationsRootView === "adoption" && <AdoptionView data={data} onSelectUser={openUser} />}
+          {conversationsRootView === "all-conversations" && (
+            <AllConversationsView
+              data={data}
+              onOpenSession={(sessionId, userId) => {
+                setSelectedUserId(userId);
+                openSession(sessionId);
+              }}
+            />
+          )}
+        </div>
+      )}
+
+      {topTab === "users" && selectedUserId && !selectedSessionId && (
+        <UserSurface
+          data={data}
+          user={currentUser}
+          selectedUserTab={selectedUserTab}
+          setSelectedUserTab={openUserTab}
+          onOpenSession={openSession}
+          onGoAdoption={() => {
+            setConversationsRootView("adoption");
+            setSelectedUserId(null);
+            setSelectedSessionId(null);
+            setSelectedUserTab("overview");
+          }}
+          onGoAllConversations={openAllConversations}
+        />
+      )}
+
+      {topTab === "users" && selectedUserId && selectedSessionId && (
+        <SessionSurface
+          data={data}
+          user={currentUser}
+          session={currentSession}
+          activePane={sessionPaneById[selectedSessionId] || "substrate"}
+          onSelectPane={(paneId) => setSessionPane(selectedSessionId, paneId)}
+          onOpenSession={openSession}
+          sessionNoteDraft={sessionNoteDraft}
+          setSessionNoteDraft={setSessionNoteDraft}
+          addSessionNote={addSessionNote}
+          messageNoteDraft={messageNoteDraft}
+          setMessageNoteDraft={setMessageNoteDraft}
+          addMessageNote={addMessageNote}
+        />
+      )}
+
+      {topTab === "angelica" && <PromptsTab />}
     </div>
   );
 }
 
-// --- Prompts view ----------------------------------------------------
+function Breadcrumbs({
+  topTab,
+  user,
+  conversationsRootView,
+  selectedUserTab,
+  session,
+  onGoAdoption,
+  onGoAllConversations,
+  onGoUser,
+  onGoUserTab,
+}) {
+  return (
+    <div style={S.breadcrumbs}>
+      {topTab === "dashboard" ? (
+        <span style={S.crumbCurrent}>Dashboard</span>
+      ) : topTab === "invites" ? (
+        <span style={S.crumbCurrent}>Invites</span>
+      ) : topTab === "angelica" ? (
+        <span style={S.crumbCurrent}>Angelica</span>
+      ) : (
+        <>
+          <span style={S.crumbLink} onClick={onGoAdoption}>Users</span>
+          {!user && conversationsRootView === "all-conversations" && (
+            <>
+              <span style={S.crumbSep}>/</span>
+              <span style={S.crumbCurrent}>All conversations</span>
+            </>
+          )}
+          {user && (
+            <>
+              <span style={S.crumbSep}>/</span>
+              <span style={S.crumbLink} onClick={onGoUser}>{user.display_name || user.id.slice(0, 8)}</span>
+              <span style={S.crumbSep}>/</span>
+              {!session ? (
+                <span style={S.crumbCurrent}>
+                  {USER_TABS.find((t) => t.id === selectedUserTab)?.label || "Overview"}
+                </span>
+              ) : (
+                <>
+                  <span style={S.crumbLink} onClick={() => onGoUserTab("conversations")}>Conversations</span>
+                  <span style={S.crumbSep}>/</span>
+                  <span style={S.crumbCurrent}>Session {session.session_number}</span>
+                </>
+              )}
+            </>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
 
-function Prompts() {
+function RootConversationSwitch({ value, onChange }) {
+  return (
+    <div style={{ ...S.card, marginBottom: 12, display: "flex", gap: 8, alignItems: "center" }}>
+      <button
+        onClick={() => onChange("adoption")}
+        style={{ ...S.secondaryBtn, ...(value === "adoption" ? S.secondaryBtnActive : null) }}
+      >
+        Users
+      </button>
+      <button
+        onClick={() => onChange("all-conversations")}
+        style={{ ...S.secondaryBtn, ...(value === "all-conversations" ? S.secondaryBtnActive : null) }}
+      >
+        All conversations
+      </button>
+    </div>
+  );
+}
+
+function DashboardLanding({
+  data,
+  onOpenUsers,
+  onOpenAllConversations,
+  onOpenInvites,
+  onOpenAngelica,
+  onOpenUser,
+}) {
+  const users = data.users || [];
+  const sessions = data.sessions || [];
+  const invites = data.invites || [];
+  const cq = data.cq || [];
+
+  const activeLast7 = users.filter((u) => {
+    const latest = sessions
+      .filter((s) => s.user_id === u.id)
+      .sort((a, b) => new Date(b.started_at) - new Date(a.started_at))[0];
+    return latest?.started_at && Date.now() - new Date(latest.started_at).getTime() < 7 * 86400000;
+  }).length;
+
+  const sessionsLast7 = sessions.filter(
+    (s) => s.started_at && Date.now() - new Date(s.started_at).getTime() < 7 * 86400000
+  ).length;
+
+  const unusedInvites = invites.filter((i) => !i.used_at).length;
+
+  const recentUsers = users
+    .map((u) => {
+      const latest = sessions
+        .filter((s) => s.user_id === u.id)
+        .sort((a, b) => new Date(b.started_at) - new Date(a.started_at))[0];
+      return {
+        id: u.id,
+        name: u.display_name || u.email || u.id.slice(0, 8),
+        lastActive: latest?.started_at,
+        sessionsCount: sessions.filter((s) => s.user_id === u.id).length,
+      };
+    })
+    .sort((a, b) => new Date(b.lastActive || 0) - new Date(a.lastActive || 0))
+    .slice(0, 6);
+
+  const recentSessions = sessions
+    .slice()
+    .sort((a, b) => new Date(b.started_at) - new Date(a.started_at))
+    .slice(0, 6)
+    .map((s) => {
+      const u = users.find((x) => x.id === s.user_id);
+      const cqRow = cq
+        .filter((c) => c.session_id === s.id)
+        .sort((a, b) => new Date(b.measured_at) - new Date(a.measured_at))[0];
+      return {
+        id: s.id,
+        userId: s.user_id,
+        userName: u?.display_name || u?.id?.slice(0, 8) || "Unknown",
+        startedAt: s.started_at,
+        sessionNumber: s.session_number,
+        cq: cqOverall(cqRow),
+      };
+    });
+
+  return (
+    <>
+      <div style={S.statsRow}>
+        <StatCard label="Total users" value={users.length} />
+        <StatCard label="Active last 7 days" value={activeLast7} />
+        <StatCard label="Sessions last 7 days" value={sessionsLast7} />
+      </div>
+
+      <div style={{ ...S.card, marginTop: 12 }}>
+        <div style={S.cardTitle}>Quick actions</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button style={S.secondaryBtn} onClick={onOpenUsers}>Open users</button>
+          <button style={S.secondaryBtn} onClick={onOpenAllConversations}>Open all conversations</button>
+          <button style={S.secondaryBtn} onClick={onOpenInvites}>Manage invites ({unusedInvites} unused)</button>
+          <button style={S.secondaryBtn} onClick={onOpenAngelica}>Open Angelica</button>
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr", marginTop: 12 }}>
+        <div style={S.card}>
+          <div style={S.cardTitle}>Recently active users</div>
+          {!recentUsers.length && <div style={S.mutedText}>No users yet.</div>}
+          {recentUsers.map((u) => (
+            <div key={u.id} style={S.keyValueRow}>
+              <span style={{ cursor: "pointer", color: "#a95d49" }} onClick={() => onOpenUser(u.id)}>{u.name}</span>
+              <span style={S.dimMeta}>{u.sessionsCount} sessions · {timeAgo(u.lastActive)}</span>
+            </div>
+          ))}
+        </div>
+
+        <div style={S.card}>
+          <div style={S.cardTitle}>Latest sessions</div>
+          {!recentSessions.length && <div style={S.mutedText}>No sessions yet.</div>}
+          {recentSessions.map((s) => (
+            <div key={s.id} style={S.keyValueRow}>
+              <span style={{ cursor: "pointer", color: "#a95d49" }} onClick={() => onOpenUser(s.userId)}>
+                {s.userName} · session {s.sessionNumber}
+              </span>
+              <span style={S.dimMeta}>{timeAgo(s.startedAt)} · CQ {s.cq != null ? s.cq.toFixed(1) : "-"}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function AdoptionView({ data, onSelectUser }) {
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+
+  const rows = useMemo(() => {
+    return (data.users || [])
+      .map((u) => {
+        const sessions = (data.sessions || []).filter((s) => s.user_id === u.id);
+        const sorted = sessions.sort((a, b) => new Date(b.started_at) - new Date(a.started_at));
+        const lastSession = sorted[0] || null;
+        const totalMins = sessions.reduce(
+          (acc, s) => acc + (durationMin(s.started_at, s.ended_at) || 0),
+          0
+        );
+        const lastActive = lastSession?.started_at;
+        return {
+          id: u.id,
+          name: u.display_name || u.email || u.id.slice(0, 8),
+          stage: u.stage,
+          level: u.level,
+          joined: u.created_at,
+          lastActive,
+          sessionsCount: sessions.length,
+          totalMins,
+          status: userStatus(lastActive),
+        };
+      })
+      .sort((a, b) => {
+        if (!a.lastActive) return 1;
+        if (!b.lastActive) return -1;
+        return new Date(b.lastActive) - new Date(a.lastActive);
+      });
+  }, [data]);
+
+  const filteredRows = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return rows.filter((r) => {
+      const statusMatch = statusFilter === "all" || r.status.label === statusFilter;
+      const queryMatch =
+        !q ||
+        r.name.toLowerCase().includes(q) ||
+        labelForStage(r.stage).toLowerCase().includes(q) ||
+        labelForLevel(r.level).toLowerCase().includes(q);
+      return statusMatch && queryMatch;
+    });
+  }, [rows, query, statusFilter]);
+
+  const totalUsers = rows.length;
+  const activeLast7 = rows.filter(
+    (r) => r.lastActive && Date.now() - new Date(r.lastActive).getTime() < 7 * 86400000
+  ).length;
+  const sessionsLast7 = (data.sessions || []).filter(
+    (s) => s.started_at && Date.now() - new Date(s.started_at).getTime() < 7 * 86400000
+  ).length;
+
+  return (
+    <div style={S.section}>
+      <div style={S.statsRow}>
+        <StatCard label="Total users" value={totalUsers} />
+        <StatCard label="Active last 7 days" value={activeLast7} />
+        <StatCard label="Sessions last 7 days" value={sessionsLast7} />
+      </div>
+
+      <div style={{ ...S.card, marginTop: 18 }}>
+        <div style={{ ...S.cardTitle, marginBottom: 10 }}>Users</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search name, stage, or level"
+            style={{ ...S.input, width: 280, marginBottom: 0 }}
+          />
+          {[
+            { id: "all", label: "All" },
+            { id: "active", label: "Active" },
+            { id: "recent", label: "Recent" },
+            { id: "dormant", label: "Dormant" },
+          ].map((opt) => (
+            <button
+              key={opt.id}
+              onClick={() => setStatusFilter(opt.id)}
+              style={{ ...S.secondaryBtn, ...(statusFilter === opt.id ? S.secondaryBtnActive : null) }}
+            >
+              {opt.label}
+            </button>
+          ))}
+          <div style={{ ...S.dimMeta, marginLeft: "auto", alignSelf: "center" }}>
+            {filteredRows.length} of {rows.length} users
+          </div>
+        </div>
+        <div style={S.tableWrap}>
+          <div style={{ ...S.tableRow, ...S.tableHeader }}>
+            <div style={{ flex: 1.7 }}>Name</div>
+            <div style={{ flex: 1.3 }}>Status</div>
+            <div style={{ flex: 1.2 }}>Stage</div>
+            <div style={{ flex: 1 }}>Level</div>
+            <div style={{ flex: 1.2 }}>Last active</div>
+            <div style={{ flex: 0.8, textAlign: "right" }}>Sessions</div>
+            <div style={{ flex: 0.8, textAlign: "right" }}>Time</div>
+            <div style={{ flex: 1.2 }}>Joined</div>
+          </div>
+          {filteredRows.map((r) => (
+            <div
+              key={r.id}
+              style={S.tableRow}
+              className="va-table-row"
+              onClick={() => onSelectUser(r.id)}
+            >
+              <div style={{ flex: 1.7, fontWeight: 500 }}>{r.name}</div>
+              <div style={{ flex: 1.3, color: r.status.color, textTransform: "capitalize" }}>{r.status.label}</div>
+              <div style={{ flex: 1.2 }}>{labelForStage(r.stage)}</div>
+              <div style={{ flex: 1 }}>{labelForLevel(r.level)}</div>
+              <div style={{ flex: 1.2, color: "#815f55" }}>{timeAgo(r.lastActive)}</div>
+              <div style={{ flex: 0.8, textAlign: "right" }}>{r.sessionsCount}</div>
+              <div style={{ flex: 0.8, textAlign: "right", color: "#815f55" }}>
+                {r.totalMins ? `${r.totalMins}m` : "-"}
+              </div>
+              <div style={{ flex: 1.2, color: "#815f55" }}>{formatDate(r.joined)}</div>
+            </div>
+          ))}
+          {!filteredRows.length && (
+            <div style={{ ...S.tableRow, color: "#815f55" }}>No users match this filter.</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function UserSurface({ data, user, selectedUserTab, setSelectedUserTab, onOpenSession, onGoAdoption, onGoAllConversations }) {
+  const sessions = useMemo(() => {
+    return (data.sessions || [])
+      .filter((s) => s.user_id === user.id)
+      .sort((a, b) => new Date(b.started_at) - new Date(a.started_at));
+  }, [data.sessions, user.id]);
+
+  const totalMins = sessions.reduce(
+    (acc, s) => acc + (durationMin(s.started_at, s.ended_at) || 0),
+    0
+  );
+  const latestSession = sessions[0] || null;
+
+  return (
+    <div style={S.section}>
+      <UserHeaderStrip user={user} sessions={sessions} totalMins={totalMins} latestSession={latestSession} />
+
+      <div style={S.innerTabs}>
+        {USER_TABS.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setSelectedUserTab(t.id)}
+            style={{ ...S.innerTabBtn, ...(selectedUserTab === t.id ? S.innerTabBtnActive : null) }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {selectedUserTab === "overview" && (
+        <UserOverview data={data} user={user} sessions={sessions} onOpenSession={onOpenSession} />
+      )}
+      {selectedUserTab === "substrate" && <UserSubstrate data={data} user={user} />}
+      {selectedUserTab === "conversations" && (
+        <UserConversations data={data} user={user} sessions={sessions} onOpenSession={onOpenSession} />
+      )}
+      {selectedUserTab === "cq" && <UserCQ data={data} user={user} sessions={sessions} />}
+    </div>
+  );
+}
+
+function AllConversationsView({ data, onOpenSession }) {
+  const rows = useMemo(() => {
+    const usersById = new Map((data.users || []).map((u) => [u.id, u]));
+    return (data.sessions || [])
+      .map((s) => {
+        const user = usersById.get(s.user_id);
+        const scoreRows = (data.scores || [])
+          .filter((sc) => sc.session_id === s.id)
+          .sort((a, b) => new Date(a.measured_at) - new Date(b.measured_at));
+        const cqRows = (data.cq || [])
+          .filter((c) => c.session_id === s.id)
+          .sort((a, b) => new Date(a.measured_at) - new Date(b.measured_at));
+        const lastScore = scoreRows[scoreRows.length - 1] || null;
+        const lastCq = cqRows[cqRows.length - 1] || null;
+        const turns = (data.messages || []).filter((m) => m.session_id === s.id).length;
+        return {
+          id: s.id,
+          userId: s.user_id,
+          userName: user?.display_name || user?.id?.slice(0, 8) || "Unknown",
+          sessionNumber: s.session_number,
+          startedAt: s.started_at,
+          mins: durationMin(s.started_at, s.ended_at),
+          turns,
+          trust: lastScore?.trust_score,
+          depth: lastScore?.depth_score,
+          readiness: lastScore?.readiness_score,
+          cq: cqOverall(lastCq),
+        };
+      })
+      .sort((a, b) => new Date(b.startedAt) - new Date(a.startedAt));
+  }, [data]);
+
+  return (
+    <div style={{ ...S.card, marginTop: 12 }}>
+      <div style={S.cardTitle}>All conversations</div>
+      <div style={S.tableWrap}>
+        <div style={{ ...S.tableRow, ...S.tableHeader }}>
+          <div style={{ flex: 1.5 }}>User</div>
+          <div style={{ flex: 0.7 }}>Session</div>
+          <div style={{ flex: 1.1 }}>Date</div>
+          <div style={{ flex: 0.7, textAlign: "right" }}>Turns</div>
+          <div style={{ flex: 0.7, textAlign: "right" }}>Time</div>
+          <div style={{ flex: 0.7, textAlign: "right" }}>Trust</div>
+          <div style={{ flex: 0.7, textAlign: "right" }}>Depth</div>
+          <div style={{ flex: 0.8, textAlign: "right" }}>CQ</div>
+        </div>
+        {rows.map((r) => (
+          <div
+            key={r.id}
+            style={S.tableRow}
+            className="va-table-row"
+            onClick={() => onOpenSession(r.id, r.userId)}
+          >
+            <div style={{ flex: 1.5, fontWeight: 500 }}>{r.userName}</div>
+            <div style={{ flex: 0.7 }}>#{r.sessionNumber}</div>
+            <div style={{ flex: 1.1, color: "#815f55" }}>{formatDate(r.startedAt)}</div>
+            <div style={{ flex: 0.7, textAlign: "right" }}>{r.turns}</div>
+            <div style={{ flex: 0.7, textAlign: "right", color: "#815f55" }}>{r.mins || 0}m</div>
+            <div style={{ flex: 0.7, textAlign: "right" }}>{r.trust ?? "-"}</div>
+            <div style={{ flex: 0.7, textAlign: "right" }}>{r.depth ?? "-"}</div>
+            <div style={{ flex: 0.8, textAlign: "right" }}>{r.cq != null ? r.cq.toFixed(1) : "-"}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function UserHeaderStrip({ user, sessions, totalMins, latestSession }) {
+  return (
+    <div style={S.headerStrip}>
+      <div style={S.headerCell}>
+        <div style={S.headerLabel}>Name</div>
+        <div style={S.headerValue}>{user.display_name || user.id.slice(0, 8)}</div>
+      </div>
+      <div style={S.headerCell}>
+        <div style={S.headerLabel}>Stage</div>
+        <div style={S.headerValue}>{labelForStage(user.stage)}</div>
+      </div>
+      <div style={S.headerCell}>
+        <div style={S.headerLabel}>Level</div>
+        <div style={S.headerValue}>{labelForLevel(user.level)}</div>
+      </div>
+      <div style={S.headerCell}>
+        <div style={S.headerLabel}>Last active</div>
+        <div style={S.headerValue}>{timeAgo(latestSession?.started_at)}</div>
+      </div>
+      <div style={S.headerCell}>
+        <div style={S.headerLabel}>Total sessions</div>
+        <div style={S.headerValue}>{sessions.length}</div>
+      </div>
+      <div style={S.headerCell}>
+        <div style={S.headerLabel}>Total time</div>
+        <div style={S.headerValue}>{totalMins}m</div>
+      </div>
+      <div style={{ ...S.headerCell, minWidth: 230 }}>
+        <div style={S.headerLabel}>Joined / Inviter</div>
+        <div style={S.headerValue}>
+          {formatDate(user.created_at)}
+          {user.invited_by_name ? ` - ${user.invited_by_name}` : ""}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const RES_ORDER = ["unvisited", "emerging", "forming", "clear", "tested"];
+const RES_COLORS = {
+  unvisited: "#d8c9c3",
+  emerging: "#e8c4a0",
+  forming: "#d0a45c",
+  clear: "#82bd8b",
+  tested: "#4a8c55",
+};
+const RES_LABELS = { unvisited: "Unvisited", emerging: "Emerging", forming: "Forming", clear: "Clear", tested: "Tested" };
+
+function resolutionBreakdown(dims) {
+  const total = dims.length;
+  const counts = RES_ORDER.reduce((acc, r) => { acc[r] = dims.filter((d) => d.resolution === r).length; return acc; }, {});
+  const touched = total - (counts.unvisited || 0);
+  return { total, counts, touched };
+}
+
+function SubstrateDiffusionCard({ title, dims, totalExpected, emptyNote, children }) {
+  const { total, counts, touched } = resolutionBreakdown(dims);
+  const pct = totalExpected > 0 ? Math.round((touched / totalExpected) * 100) : 0;
+  const isEmpty = dims.length === 0;
+
+  return (
+    <div style={S.card}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
+        <div style={S.cardTitle}>{title}</div>
+        {!isEmpty && (
+          <span style={{ fontSize: 11, color: "#a95d49", fontWeight: 600 }}>
+            {touched}/{totalExpected} touched · {pct}%
+          </span>
+        )}
+      </div>
+
+      {isEmpty ? (
+        <div style={S.mutedText}>{emptyNote}</div>
+      ) : (
+        <>
+          {/* Segmented resolution bar */}
+          <div style={{ display: "flex", height: 8, borderRadius: 4, overflow: "hidden", marginBottom: 8, background: "#e8ddd8" }}>
+            {RES_ORDER.filter((r) => counts[r] > 0).map((r) => (
+              <div
+                key={r}
+                title={`${RES_LABELS[r]}: ${counts[r]}`}
+                style={{
+                  flex: counts[r],
+                  background: RES_COLORS[r],
+                  transition: "flex 0.3s",
+                }}
+              />
+            ))}
+          </div>
+          {/* Resolution count row */}
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+            {RES_ORDER.filter((r) => counts[r] > 0).map((r) => (
+              <span key={r} style={{ fontSize: 11, color: RES_COLORS[r] === "#d8c9c3" ? "#888" : RES_COLORS[r], fontWeight: 500 }}>
+                {counts[r]} {RES_LABELS[r].toLowerCase()}
+              </span>
+            ))}
+          </div>
+          {children}
+        </>
+      )}
+    </div>
+  );
+}
+
+function UserOverview({ data, user, sessions, onOpenSession }) {
+  const [substrateOpen, setSubstrateOpen] = useState(null); // "portrait" | "partner" | "relationship"
+  const portrait = (data.dimensions || []).filter((d) => d.user_id === user.id);
+  const partner = (data.partnerDimensions || []).filter((d) => d.user_id === user.id);
+  const relationship = (data.relationshipDimensions || []).filter((d) => d.user_id === user.id);
+  const essentialTruth = (data.essentialTruth || []).find((r) => r.user_id === user.id);
+  const activeHypotheses = (data.hypotheses || []).filter(
+    (h) => h.user_id === user.id && h.status === "active"
+  );
+  const latestSession = sessions[0] || null;
+
+  const latestScore = useMemo(() => {
+    const rows = (data.scores || [])
+      .filter((s) => s.user_id === user.id)
+      .sort((a, b) => new Date(b.measured_at) - new Date(a.measured_at));
+    return rows[0] || null;
+  }, [data.scores, user.id]);
+
+  const latestCQ = useMemo(() => {
+    const rows = (data.cq || [])
+      .filter((c) => c.user_id === user.id)
+      .sort((a, b) => new Date(b.measured_at) - new Date(a.measured_at));
+    return rows[0] || null;
+  }, [data.cq, user.id]);
+
+  const latestObserverNote = useMemo(() => {
+    const rows = (data.observerNotes || [])
+      .filter((n) => n.user_id === user.id)
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    return rows[0] || null;
+  }, [data.observerNotes, user.id]);
+
+  const portraitGroupSummaries = useMemo(() => {
+    const byGroup = portrait.reduce((acc, d) => {
+      const k = d.grouping || "other";
+      (acc[k] = acc[k] || []).push(d);
+      return acc;
+    }, {});
+    return Object.entries(byGroup)
+      .map(([group, dims]) => {
+        const formed = dims.filter((d) => ["forming", "clear", "tested"].includes(d.resolution)).length;
+        const total = dims.length;
+        return { group, total, formed, pct: total > 0 ? Math.round((formed / total) * 100) : 0 };
+      })
+      .sort((a, b) => b.pct - a.pct);
+  }, [portrait]);
+
+  const partnerTop = useMemo(
+    () => partner.filter((d) => d.resolution !== "unvisited").sort((a, b) => (b.confidence || 0) - (a.confidence || 0)).slice(0, 6),
+    [partner]
+  );
+  const relTop = useMemo(
+    () => relationship.filter((d) => d.resolution !== "unvisited").sort((a, b) => (b.confidence || 0) - (a.confidence || 0)).slice(0, 6),
+    [relationship]
+  );
+  const relTiers = useMemo(
+    () => [1, 2, 3].map((tier) => {
+      const dims = relationship.filter((d) => d.tier === tier);
+      return { tier, total: dims.length, active: dims.filter((d) => d.resolution !== "unvisited").length };
+    }),
+    [relationship]
+  );
+
+  const cqScore = cqOverall(latestCQ);
+  const { touched: portraitTouched } = resolutionBreakdown(portrait);
+  const portraitPct = Math.round((portraitTouched / 200) * 100);
+
+  // Inline stat helper
+  function Stat({ label, value }) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 80 }}>
+        <span style={{ fontSize: 10, color: "#a95d49", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</span>
+        <span style={{ fontSize: 15, fontWeight: 700, color: "#3d2b24" }}>{value}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+
+      {/* ── 3. Portrait / Partner / Relationship — clickable tiles ── */}
+      {(() => {
+        const portraitBd = resolutionBreakdown(portrait);
+        const partnerBd = resolutionBreakdown(partner);
+        const relBd = resolutionBreakdown(relationship);
+        function SubstrateTile({ id, title, dims, totalExpected, bd }) {
+          const touched = bd.touched;
+          const pct = Math.round((touched / totalExpected) * 100);
+          const isOpen = substrateOpen === id;
+          return (
+            <div
+              onClick={() => setSubstrateOpen(isOpen ? null : id)}
+              style={{ ...S.card, cursor: "pointer", outline: isOpen ? "2px solid #a95d49" : "none", userSelect: "none" }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
+                <div style={S.cardTitle}>{title}</div>
+                <span style={{ fontSize: 11, color: isOpen ? "#a95d49" : "#888", fontWeight: 600 }}>{touched}/{totalExpected} · {pct}%</span>
+              </div>
+              <div style={{ display: "flex", height: 6, borderRadius: 3, overflow: "hidden", background: "#e8ddd8" }}>
+                {RES_ORDER.filter((r) => bd.counts[r] > 0).map((r) => (
+                  <div key={r} title={`${RES_LABELS[r]}: ${bd.counts[r]}`} style={{ flex: bd.counts[r], background: RES_COLORS[r] }} />
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: 10, marginTop: 4, flexWrap: "wrap" }}>
+                {RES_ORDER.filter((r) => bd.counts[r] > 0).map((r) => (
+                  <span key={r} style={{ fontSize: 10, color: RES_COLORS[r] === "#d8c9c3" ? "#999" : RES_COLORS[r] }}>
+                    {bd.counts[r]} {RES_LABELS[r].toLowerCase()}
+                  </span>
+                ))}
+              </div>
+            </div>
+          );
+        }
+        return (
+          <>
+            <div style={{ display: "grid", gap: 10, gridTemplateColumns: "1fr 1fr 1fr" }}>
+              <SubstrateTile id="portrait" title="Portrait" dims={portrait} totalExpected={200} bd={portraitBd} />
+              <SubstrateTile id="partner" title="Partner image" dims={partner} totalExpected={50} bd={partnerBd} />
+              <SubstrateTile id="relationship" title="Relationship image" dims={relationship} totalExpected={50} bd={relBd} />
+            </div>
+            {substrateOpen === "portrait" && portrait.length > 0 && (
+              <div style={{ ...S.card, maxHeight: 340, overflowY: "auto" }}>
+                <div style={{ fontSize: 11, color: "#a95d49", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>Portrait — Angelica's notes</div>
+                {portrait.filter((d) => d.evidence_notes).sort((a, b) => (b.weight || 0) - (a.weight || 0)).map((d) => (
+                  <div key={d.id} style={{ marginBottom: 10 }}>
+                    <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: "#3d2b24" }}>{d.dimension_name.replace(/_/g, " ")}</span>
+                      <span style={{ fontSize: 10, color: RES_COLORS[d.resolution] || "#888" }}>{d.resolution}</span>
+                    </div>
+                    <div style={{ fontSize: 12, color: "#5a4540", lineHeight: 1.5, marginTop: 2 }}>{d.evidence_notes}</div>
+                  </div>
+                ))}
+                {portrait.filter((d) => d.evidence_notes).length === 0 && <div style={S.mutedText}>No notes written yet.</div>}
+              </div>
+            )}
+            {substrateOpen === "partner" && partner.length > 0 && (
+              <div style={{ ...S.card, maxHeight: 340, overflowY: "auto" }}>
+                <div style={{ fontSize: 11, color: "#a95d49", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>Partner image — Angelica's notes</div>
+                {partner.filter((d) => d.resolution !== "unvisited").sort((a, b) => (b.confidence || 0) - (a.confidence || 0)).map((d) => {
+                  const desc = [d.stated_value, d.inferred_value, d.tested_value].filter(Boolean).join(" · ");
+                  return (
+                    <div key={d.id} style={{ marginBottom: 10 }}>
+                      <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: "#3d2b24" }}>{d.dimension_name.replace(/_/g, " ")}</span>
+                        <span style={{ fontSize: 10, color: RES_COLORS[d.resolution] || "#888" }}>{d.resolution}</span>
+                      </div>
+                      {desc && <div style={{ fontSize: 12, color: "#5a4540", lineHeight: 1.5, marginTop: 2 }}>{desc}</div>}
+                    </div>
+                  );
+                })}
+                {partner.filter((d) => d.resolution !== "unvisited").length === 0 && <div style={S.mutedText}>No data yet.</div>}
+              </div>
+            )}
+            {substrateOpen === "relationship" && relationship.length > 0 && (
+              <div style={{ ...S.card, maxHeight: 340, overflowY: "auto" }}>
+                <div style={{ fontSize: 11, color: "#a95d49", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>Relationship image — Angelica's notes</div>
+                {relationship.filter((d) => d.resolution !== "unvisited").sort((a, b) => (a.tier - b.tier) || ((b.confidence || 0) - (a.confidence || 0))).map((d) => {
+                  const desc = [d.imagined_position != null ? `Imagined ${d.imagined_position}` : null, d.evidenced_position != null ? `Evidenced ${d.evidenced_position}` : null].filter(Boolean).join(" · ");
+                  return (
+                    <div key={d.id} style={{ marginBottom: 10 }}>
+                      <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: "#3d2b24" }}>{d.dimension_name.replace(/_/g, " ")}</span>
+                        <span style={{ fontSize: 10, color: "#888" }}>T{d.tier}</span>
+                        <span style={{ fontSize: 10, color: RES_COLORS[d.resolution] || "#888" }}>{d.resolution}</span>
+                      </div>
+                      {desc && <div style={{ fontSize: 12, color: "#5a4540", lineHeight: 1.5, marginTop: 2 }}>{desc}</div>}
+                    </div>
+                  );
+                })}
+                {relationship.filter((d) => d.resolution !== "unvisited").length === 0 && <div style={S.mutedText}>No data yet.</div>}
+              </div>
+            )}
+          </>
+        );
+      })()}
+
+      {/* ── 4. Angelica's read + Health ── */}
+      <div style={{ display: "grid", gap: 10, gridTemplateColumns: "1.3fr 0.7fr" }}>
+        <div style={{ ...S.card, overflow: "hidden" }}>
+          <div style={S.cardTitle}>Angelica's read</div>
+          {essentialTruth?.text ? (
+            <div style={{ ...S.quote, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical" }}>
+              "{essentialTruth.text}"
+            </div>
+          ) : (
+            <div style={S.mutedText}>No essential truth yet.</div>
+          )}
+          {activeHypotheses.length > 0 && (
+            <div style={{ marginTop: 8 }}>
+              <div style={{ fontSize: 10, color: "#a95d49", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>
+                Hypotheses ({activeHypotheses.length})
+              </div>
+              {activeHypotheses.slice(0, 2).map((h) => (
+                <div key={h.id} style={{ fontSize: 11, color: "#5a4540", lineHeight: 1.4, marginBottom: 3, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{h.text}</div>
+              ))}
+              {activeHypotheses.length > 2 && <div style={S.mutedText}>+{activeHypotheses.length - 2} more</div>}
+            </div>
+          )}
+          {latestObserverNote?.note && (
+            <div style={{ marginTop: 8, borderTop: "1px solid #ede0da", paddingTop: 8 }}>
+              <div style={{ fontSize: 10, color: "#a95d49", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Observer note</div>
+              <div style={{ fontSize: 12, color: "#5a4540", lineHeight: 1.4, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{latestObserverNote.note}</div>
+            </div>
+          )}
+        </div>
+        <div style={{ ...S.card, overflow: "hidden" }}>
+          <div style={S.cardTitle}>
+            Health
+            {cqScore != null && <span style={{ marginLeft: 6, color: "#a95d49", fontSize: 11 }}>CQ {cqScore.toFixed(1)}/10</span>}
+          </div>
+          {latestCQ ? (
+            CQ_OVERVIEW_KEYS.map((k) => (
+              <ScoreBar key={k} label={niceLabel(k)} value={latestCQ[k]} max={10} />
+            ))
+          ) : (
+            <div style={S.mutedText}>No CQ readings yet.</div>
+          )}
+          {latestScore && (
+            <div style={{ marginTop: 6, borderTop: "1px solid #ede0da", paddingTop: 6 }}>
+              <ScoreBar label="Trust" value={latestScore.trust_score} />
+              <ScoreBar label="Depth" value={latestScore.depth_score} />
+              <ScoreBar label="Readiness" value={latestScore.readiness_score} />
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── 5. All sessions ── */}
+      <div style={S.card}>
+        <div style={{ ...S.cardTitle, marginBottom: 8 }}>Sessions ({sessions.length})</div>
+        {sessions.length === 0 ? (
+          <div style={S.mutedText}>No sessions yet.</div>
+        ) : (
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+            <thead>
+              <tr style={{ borderBottom: "1px solid #ede0da" }}>
+                {["#", "Date", "Turns", "Dur", "Trust", "CQ", "Notes"].map((h) => (
+                  <th key={h} style={{ textAlign: "left", padding: "3px 8px 5px 0", fontSize: 10, color: "#a95d49", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", whiteSpace: "nowrap" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {sessions.map((s) => {
+                const msgs = (data.messages || []).filter((m) => m.session_id === s.id).length;
+                const scoreRow = (data.scores || []).filter((r) => r.session_id === s.id).sort((a, b) => new Date(b.measured_at) - new Date(a.measured_at))[0] || null;
+                const cqRow = (data.cq || []).filter((c) => c.session_id === s.id).sort((a, b) => new Date(b.measured_at) - new Date(a.measured_at))[0] || null;
+                const dur = durationMin(s.started_at, s.ended_at);
+                return (
+                  <tr
+                    key={s.id}
+                    onClick={() => onOpenSession(s.id)}
+                    style={{ borderBottom: "1px solid #f3ebe7", cursor: "pointer" }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = "#fdf6f3"}
+                    onMouseLeave={(e) => e.currentTarget.style.background = ""}
+                  >
+                    <td style={{ padding: "5px 8px 5px 0", fontWeight: 600, color: "#3d2b24", whiteSpace: "nowrap" }}>{s.session_number}</td>
+                    <td style={{ padding: "5px 8px 5px 0", color: "#815f55", whiteSpace: "nowrap" }}>{formatDate(s.started_at)}</td>
+                    <td style={{ padding: "5px 8px 5px 0", color: "#815f55" }}>{msgs}</td>
+                    <td style={{ padding: "5px 8px 5px 0", color: "#815f55", whiteSpace: "nowrap" }}>{dur != null ? `${dur}m` : "—"}</td>
+                    <td style={{ padding: "5px 8px 5px 0", color: "#815f55" }}>{scoreRow?.trust_score ?? "—"}</td>
+                    <td style={{ padding: "5px 8px 5px 0", color: "#815f55" }}>{cqOverall(cqRow) != null ? cqOverall(cqRow).toFixed(1) : "—"}</td>
+                    <td style={{ padding: "5px 0", color: "#5a4540", maxWidth: 260, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{s.notes || ""}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function UserSubstrate({ data, user }) {
+  const portrait = (data.dimensions || []).filter((d) => d.user_id === user.id);
+  const silences = (data.silences || [])
+    .filter((s) => s.user_id === user.id)
+    .sort((a, b) => (b.sessions_absent || 0) - (a.sessions_absent || 0));
+  const partner = (data.partnerDimensions || []).filter((d) => d.user_id === user.id);
+  const relationship = (data.relationshipDimensions || []).filter((d) => d.user_id === user.id);
+
+  const portraitByGroup = portrait.reduce((acc, d) => {
+    const key = d.grouping || "other";
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(d);
+    return acc;
+  }, {});
+
+  for (const key of Object.keys(portraitByGroup)) {
+    portraitByGroup[key].sort((a, b) => (b.weight || 0) - (a.weight || 0));
+  }
+
+  return (
+    <div className="va-substrate-grid" style={{ marginTop: 14, display: "grid", gap: 14, gridTemplateColumns: "1fr 1fr 1fr" }}>
+      <div style={S.card}>
+        <div style={S.cardTitle}>Portrait</div>
+        {!portrait.length && <div style={S.mutedText}>No portrait dimensions captured yet.</div>}
+        {Object.entries(portraitByGroup).map(([group, rows]) => (
+          <div key={group} style={{ marginBottom: 10 }}>
+            <div style={S.groupTitle}>{group}</div>
+            {rows.slice(0, 12).map((d) => (
+              <div key={d.id} style={S.keyValueRow}>
+                <span>{d.dimension_name}</span>
+                <span style={S.dimMeta}>{d.resolution || "-"} / w{d.weight || 0}</span>
+              </div>
+            ))}
+          </div>
+        ))}
+
+        <div style={{ ...S.cardTitle, marginTop: 12 }}>Silences</div>
+        {!silences.length && <div style={S.mutedText}>No silences tracked yet.</div>}
+        {silences.map((s) => (
+          <div key={s.id} style={S.keyValueRow}>
+            <span>{s.topic}</span>
+            <span style={S.dimMeta}>absent {s.sessions_absent || 0}</span>
+          </div>
+        ))}
+      </div>
+
+      <div style={S.card}>
+        <div style={S.cardTitle}>Partner image</div>
+        {!partner.length && (
+          <div style={S.mutedText}>
+            Empty until Stage 3 work begins. This is expected and not missing data.
+          </div>
+        )}
+        {partner.map((d) => (
+          <div key={d.id} style={S.keyValueRow}>
+            <span>{d.dimension_name}</span>
+            <span style={S.dimMeta}>{d.dimension_type || "-"}</span>
+          </div>
+        ))}
+      </div>
+
+      <div style={S.card}>
+        <div style={S.cardTitle}>Relationship image</div>
+        {!relationship.length && (
+          <div style={S.mutedText}>
+            Empty until Stage 3 work begins. This is expected and not missing data.
+          </div>
+        )}
+        {relationship.map((d) => (
+          <div key={d.id} style={S.keyValueRow}>
+            <span>{d.dimension_name}</span>
+            <span style={S.dimMeta}>tier {d.tier || "-"}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function UserConversations({ data, user, sessions, onOpenSession }) {
+  const sorted = sessions.slice().sort((a, b) => new Date(a.started_at) - new Date(b.started_at));
+
+  return (
+    <div style={{ marginTop: 14 }}>
+      {!sorted.length && <div style={S.card}>No sessions for this user yet.</div>}
+      {sorted.length > 0 && (
+        <div style={S.card}>
+          <div style={S.tableWrap}>
+            <div style={{ ...S.tableRow, ...S.tableHeader }}>
+              <div style={{ flex: 0.5 }}>#</div>
+              <div style={{ flex: 1.4 }}>Date</div>
+              <div style={{ flex: 0.7, textAlign: "right" }}>Turns</div>
+              <div style={{ flex: 0.7, textAlign: "right" }}>Time</div>
+              <div style={{ flex: 0.7, textAlign: "right" }}>Trust</div>
+              <div style={{ flex: 0.7, textAlign: "right" }}>Depth</div>
+              <div style={{ flex: 0.7, textAlign: "right" }}>CQ</div>
+              <div style={{ flex: 1 }}>Stage</div>
+              <div style={{ flex: 1.6 }}>What emerged</div>
+            </div>
+            {sorted.map((s) => {
+              const msgs = (data.messages || []).filter((m) => m.session_id === s.id).length;
+              const scoreRow = (data.scores || [])
+                .filter((sc) => sc.session_id === s.id)
+                .sort((a, b) => new Date(b.measured_at) - new Date(a.measured_at))[0] || null;
+              const cqRow = (data.cq || [])
+                .filter((c) => c.session_id === s.id)
+                .sort((a, b) => new Date(b.measured_at) - new Date(a.measured_at))[0] || null;
+              const keyMoments = (data.keyMoments || []).filter(
+                (k) => k.user_id === s.user_id && Number(k.session_number) === Number(s.session_number)
+              );
+              const hypotheses = (data.hypotheses || []).filter(
+                (h) => h.user_id === s.user_id && Number(h.created_session) === Number(s.session_number)
+              );
+              const emerged = [
+                ...hypotheses.map((h) => h.text),
+                ...keyMoments.map((k) => k.description),
+              ][0] || null;
+
+              return (
+                <div
+                  key={s.id}
+                  style={{ ...S.tableRow, cursor: "pointer", alignItems: "flex-start" }}
+                  className="va-table-row"
+                  onClick={() => onOpenSession(s.id)}
+                >
+                  <div style={{ flex: 0.5, fontWeight: 600, color: "#a95d49" }}>#{s.session_number}</div>
+                  <div style={{ flex: 1.4 }}>
+                    <div>{formatDate(s.started_at)}</div>
+                    <div style={{ fontSize: 11, color: "#aaa" }}>{formatTime(s.started_at)}</div>
+                  </div>
+                  <div style={{ flex: 0.7, textAlign: "right" }}>{msgs}</div>
+                  <div style={{ flex: 0.7, textAlign: "right", color: "#815f55" }}>
+                    {durationMin(s.started_at, s.ended_at) || 0}m
+                  </div>
+                  <div style={{ flex: 0.7, textAlign: "right" }}>{scoreRow?.trust_score ?? "-"}</div>
+                  <div style={{ flex: 0.7, textAlign: "right" }}>{scoreRow?.depth_score ?? "-"}</div>
+                  <div style={{ flex: 0.7, textAlign: "right" }}>
+                    {cqOverall(cqRow) != null ? cqOverall(cqRow).toFixed(1) : "-"}
+                  </div>
+                  <div style={{ flex: 1, color: "#815f55" }}>{labelForStage(s.stage)}</div>
+                  <div style={{ flex: 1.6, color: "#666", fontSize: 12, whiteSpace: "normal", lineHeight: 1.4 }}>
+                    {emerged || <span style={{ color: "#bbb" }}>—</span>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SessionCard({ session, data, onOpen }) {
+  const messages = (data.messages || []).filter((m) => m.session_id === session.id);
+  const fragments = (data.fragments || []).filter(
+    (f) => f.user_id === session.user_id && Number(f.session_number) === Number(session.session_number)
+  );
+  const hypotheses = (data.hypotheses || []).filter(
+    (h) =>
+      h.user_id === session.user_id &&
+      (Number(h.created_session) === Number(session.session_number) ||
+        Number(h.resolved_session) === Number(session.session_number))
+  );
+  const keyMoments = (data.keyMoments || []).filter(
+    (k) => k.user_id === session.user_id && Number(k.session_number) === Number(session.session_number)
+  );
+  const territory = (data.territory || []).filter(
+    (t) => t.user_id === session.user_id && Number(t.last_visited_session) === Number(session.session_number)
+  );
+  const dimensions = (data.dimensions || []).filter(
+    (d) => d.user_id === session.user_id && Number(d.last_evidence_session) === Number(session.session_number)
+  );
+
+  const scoreRows = (data.scores || [])
+    .filter((s) => s.session_id === session.id)
+    .sort((a, b) => new Date(a.measured_at) - new Date(b.measured_at));
+  const trailingScore = scoreRows[scoreRows.length - 1] || null;
+
+  const cqRows = (data.cq || [])
+    .filter((c) => c.session_id === session.id)
+    .sort((a, b) => new Date(a.measured_at) - new Date(b.measured_at));
+  const trailingCQ = cqRows[cqRows.length - 1] || null;
+
+  const transitions = stageTransitionsForSession(data.stageTransitions || [], session);
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+        <div style={{ fontSize: 15, fontWeight: 600 }}>
+          Session {session.session_number}
+          <span style={{ marginLeft: 10, color: "#a95d49", fontSize: 12 }}>
+            Stage {session.stage ?? "-"} - Level {session.level ?? "-"}
+          </span>
+        </div>
+        <div style={S.mutedText}>
+          {timeAgo(session.started_at)} - {durationMin(session.started_at, session.ended_at) || 0}m - {messages.length} turns
+        </div>
+      </div>
+
+      {!!transitions.length && (
+        <div style={{ marginTop: 6, fontSize: 11, color: "#b8b4af" }}>
+          Transitions: {transitions.map((t) => `${t.from_stage || "?"}->${t.to_stage || "?"}`).join(", ")}
+        </div>
+      )}
+
+      <div style={{ marginTop: 10 }}>
+        <div style={S.groupTitle}>What emerged</div>
+        <ul style={S.simpleList}>
+          {fragments.slice(0, 3).map((f) => (
+            <li key={f.id}>Fragment: "{f.text}"</li>
+          ))}
+          {hypotheses.map((h) => (
+            <li key={h.id}>Hypothesis {Number(h.created_session) === Number(session.session_number) ? "added" : h.status}: {h.text}</li>
+          ))}
+          {keyMoments.map((k) => (
+            <li key={k.id}>Key moment: {k.description}</li>
+          ))}
+          {territory.map((t) => (
+            <li key={t.id}>Territory: {t.territory} (depth {t.depth || 0}/5)</li>
+          ))}
+          {!!dimensions.length && <li>{dimensions.length} dimensions evidenced</li>}
+          {!fragments.length && !hypotheses.length && !keyMoments.length && !territory.length && !dimensions.length && (
+            <li style={{ color: "#8e8882" }}>No substrate updates recorded for this session.</li>
+          )}
+        </ul>
+      </div>
+
+      <div style={{ marginTop: 10, display: "flex", gap: 12, alignItems: "center", fontSize: 12 }}>
+        <span>Trust {trailingScore?.trust_score ?? "-"}</span>
+        <span>Depth {trailingScore?.depth_score ?? "-"}</span>
+        <span>Readiness {trailingScore?.readiness_score ?? "-"}</span>
+        <span>CQ {cqOverall(trailingCQ) != null ? cqOverall(trailingCQ).toFixed(1) : "-"}</span>
+        <button onClick={onOpen} style={{ ...S.secondaryBtn, marginLeft: "auto" }}>Open conversation</button>
+      </div>
+    </div>
+  );
+}
+
+function UserCQ({ data, user, sessions }) {
+  const cqRows = (data.cq || [])
+    .filter((c) => c.user_id === user.id)
+    .sort((a, b) => new Date(a.measured_at) - new Date(b.measured_at));
+
+  const sessionOrder = sessions
+    .slice()
+    .sort((a, b) => new Date(a.started_at) - new Date(b.started_at))
+    .map((s) => s.id);
+
+  const notes = (data.observerNotes || [])
+    .filter((n) => n.user_id === user.id)
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+  return (
+    <div className="va-cq-grid" style={{ marginTop: 14, display: "grid", gap: 14, gridTemplateColumns: "1.5fr 1fr" }}>
+      <div style={S.card}>
+        <div style={S.cardTitle}>CQ dimensions across sessions</div>
+        {!cqRows.length && <div style={S.mutedText}>No CQ rows yet.</div>}
+        {CQ_GROUPS.map((g) => (
+          <div key={g.label} style={{ marginBottom: 14 }}>
+            <div style={S.groupTitle}>{g.label}</div>
+            {g.keys.map((key) => {
+              const values = sessionOrder.map((sid) => {
+                const row = cqRows.find((r) => r.session_id === sid);
+                return row ? Number(row[key]) : null;
+              });
+              const latestVal = [...values].reverse().find((v) => v != null);
+              return (
+                <div key={key} style={{ marginBottom: 8 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                    <span style={{ fontSize: 11 }}>{niceLabel(key)}</span>
+                    <span style={{ ...S.dimMeta, color: "#a95d49" }}>
+                      {latestVal != null ? `${latestVal}/10` : "-"}
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", gap: 4 }}>
+                    {values.map((v, i) => (
+                      <div
+                        key={`${key}-${i}`}
+                        title={v == null ? "No reading" : `${v}/10`}
+                        style={{
+                          height: 20,
+                          flex: 1,
+                          borderRadius: 3,
+                          background:
+                            v == null
+                              ? "#25211e"
+                              : i === values.length - 1
+                                ? "#a95d49"
+                                : `rgba(214, 171, 108, ${Math.max(0.2, v / 10)})`,
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+
+      <div style={S.card}>
+        <div style={S.cardTitle}>Observer notes</div>
+        {!notes.length && <div style={S.mutedText}>No observer notes yet.</div>}
+        {notes.map((n) => (
+          <div key={n.id} style={S.noteCard}>
+            <div style={S.noteText}>{n.note}</div>
+            <div style={S.noteMeta}>
+              {n.rubric_version || "-"} - {formatDate(n.created_at)}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SessionSurface({
+  data,
+  user,
+  session,
+  activePane,
+  onSelectPane,
+  onOpenSession,
+  sessionNoteDraft,
+  setSessionNoteDraft,
+  addSessionNote,
+  messageNoteDraft,
+  setMessageNoteDraft,
+  addMessageNote,
+}) {
+  const messages = (data.messages || [])
+    .filter((m) => m.session_id === session.id)
+    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+  const substrate = buildSessionSubstrate(data, user.id, session);
+
+  const cqRows = (data.cq || [])
+    .filter((c) => c.user_id === user.id)
+    .sort((a, b) => new Date(a.measured_at) - new Date(b.measured_at));
+  const cqRow = cqRows.find((r) => r.session_id === session.id) || null;
+  const previousCq = cqRows.find((r) => new Date(r.measured_at) < new Date(cqRow?.measured_at || 0)) || null;
+
+  const observerNotes = (data.observerNotes || [])
+    .filter((n) => n.session_id === session.id)
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+  const messageNotes = (data.messageNotes || [])
+    .filter((n) => messages.some((m) => m.id === n.message_id))
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+  const messageById = new Map(messages.map((m) => [m.id, m]));
+
+  const nudges = cqNudgesFor(cqRow);
+
+  // Sibling sessions for this user, ordered by session_number
+  const userSessions = (data.sessions || [])
+    .filter((s) => s.user_id === user.id)
+    .sort((a, b) => Number(a.session_number) - Number(b.session_number));
+  const idx = userSessions.findIndex((s) => s.id === session.id);
+  const prevSession = idx > 0 ? userSessions[idx - 1] : null;
+  const nextSession = idx >= 0 && idx < userSessions.length - 1 ? userSessions[idx + 1] : null;
+
+  return (
+    <div style={S.section}>
+      <div
+        style={{
+          position: "sticky",
+          top: 142, // sits below Mission Control + tabs + breadcrumbs
+          zIndex: 40,
+          background: "#efdcd5",
+          margin: "-16px -20px 12px",
+          padding: "10px 20px",
+          borderBottom: "1px solid #dcc1b7",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button
+            onClick={() => prevSession && onOpenSession?.(prevSession.id)}
+            disabled={!prevSession}
+            style={{ ...S.secondaryBtn, opacity: prevSession ? 1 : 0.4, cursor: prevSession ? "pointer" : "default" }}
+            title={prevSession ? `Session ${prevSession.session_number}` : ""}
+          >
+            ← Prev
+          </button>
+          <select
+            value={session.id}
+            onChange={(e) => onOpenSession?.(e.target.value)}
+            style={{ ...S.input, padding: "6px 10px", fontWeight: 600, color: "#3d2b24" }}
+          >
+            {userSessions.map((s) => (
+              <option key={s.id} value={s.id}>
+                Session {s.session_number} — {formatDate(s.started_at)}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={() => nextSession && onOpenSession?.(nextSession.id)}
+            disabled={!nextSession}
+            style={{ ...S.secondaryBtn, opacity: nextSession ? 1 : 0.4, cursor: nextSession ? "pointer" : "default" }}
+            title={nextSession ? `Session ${nextSession.session_number}` : ""}
+          >
+            Next →
+          </button>
+        </div>
+        <div style={S.mutedText}>
+          {durationMin(session.started_at, session.ended_at) || 0}m · {messages.length} turns · stage {session.stage ?? "-"} / level {session.level ?? "-"}
+        </div>
+      </div>
+
+      {/* Conversation + observer notes aligned by message */}
+      {(() => {
+        // Build a map from anchor message id to the latest CQ reading for that anchor
+        const sortedCq = [...cqRows].sort((a, b) => new Date(a.measured_at) - new Date(b.measured_at));
+        const anchorByCq = new Map(); // cq.id -> message
+        for (const cq of sortedCq) {
+          const cqT = new Date(cq.measured_at).getTime();
+          let anchor = null;
+          for (let i = messages.length - 1; i >= 0; i--) {
+            if (new Date(messages[i].created_at).getTime() <= cqT) { anchor = messages[i]; break; }
+          }
+          anchorByCq.set(cq.id, anchor);
+        }
+        const cqByAnchorId = new Map(); // message.id -> latest cq
+        for (const cq of sortedCq) {
+          const a = anchorByCq.get(cq.id);
+          if (a) cqByAnchorId.set(a.id, cq);
+        }
+
+        return (
+          <div style={{ ...S.card, marginTop: 12 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", columnGap: 14, marginBottom: 8 }}>
+              <div style={S.cardTitle}>Conversation</div>
+              <div style={{ ...S.cardTitle, color: "#6b8e7f" }}>
+                Observer ({sortedCq.length})
+              </div>
+            </div>
+            {!messages.length && <div style={S.mutedText}>No messages in this session.</div>}
+            <div className="va-msg-grid" style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", columnGap: 14, rowGap: 10, alignItems: "start" }}>
+              {messages.map((m) => {
+                const isUser = m.role === "user";
+                const cq = cqByAnchorId.get(m.id) || null;
+                return (
+                  <Fragment key={m.id}>
+                    <div style={{ ...S.messageCard, ...(isUser ? S.userMessageCard : S.assistantMessageCard) }}>
+                      <div style={S.messageMeta}>
+                        <span>{isUser ? (user.display_name || "User") : "Angelica"}</span>
+                        <span>{formatTime(m.created_at)}</span>
+                      </div>
+                      <div style={S.messageBody}>{m.content}</div>
+                    </div>
+                    <div>
+                      {cq ? (
+                        <ObserverFeedCard cq={cq} anchor={null} userName={user.display_name || "User"} />
+                      ) : null}
+                    </div>
+                  </Fragment>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Panels below the conversation */}
+      <div style={{ marginTop: 14, display: "grid", gap: 14, gridTemplateColumns: "1fr 1fr 1fr", alignItems: "start" }}>
+        <CQVerdictPane cqRow={cqRow} previousCq={previousCq} observerNotes={observerNotes} />
+        <SubstrateSnapshotPane substrate={substrate} />
+        <NotesPane
+          session={session}
+          observerNotes={observerNotes}
+          messageNotes={messageNotes}
+          messageById={messageById}
+          sessionNoteDraft={sessionNoteDraft}
+          setSessionNoteDraft={setSessionNoteDraft}
+          addSessionNote={addSessionNote}
+        />
+      </div>
+    </div>
+  );
+}
+
+function buildSessionSubstrate(data, userId, session) {
+  return {
+    fragments: (data.fragments || []).filter(
+      (f) => f.user_id === userId && Number(f.session_number) === Number(session.session_number)
+    ),
+    hypotheses: (data.hypotheses || []).filter(
+      (h) =>
+        h.user_id === userId &&
+        (Number(h.created_session) === Number(session.session_number) ||
+          Number(h.resolved_session) === Number(session.session_number))
+    ),
+    keyMoments: (data.keyMoments || []).filter(
+      (k) => k.user_id === userId && Number(k.session_number) === Number(session.session_number)
+    ),
+    dimensions: (data.dimensions || []).filter(
+      (d) => d.user_id === userId && Number(d.last_evidence_session) === Number(session.session_number)
+    ),
+    territory: (data.territory || []).filter(
+      (t) => t.user_id === userId && Number(t.last_visited_session) === Number(session.session_number)
+    ),
+  };
+}
+
+function ObserverFeedPane({ cqRows, messages, userName }) {
+  const sorted = [...(cqRows || [])].sort((a, b) => new Date(a.measured_at) - new Date(b.measured_at));
+
+  // For each reading, find the last message at or before its timestamp,
+  // so we can show the user a turn anchor (e.g. "after Kim's reply at 8:34")
+  const anchored = sorted.map((cq) => {
+    const cqT = new Date(cq.measured_at).getTime();
+    let anchor = null;
+    for (let i = (messages || []).length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (new Date(m.created_at).getTime() <= cqT) { anchor = m; break; }
+    }
+    return { cq, anchor };
+  });
+
+  return (
+    <div style={S.card}>
+      <div style={{ ...S.cardTitle, display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+        <span>Observer feed</span>
+        <span style={{ fontSize: 10, color: "#815f55", fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>
+          {sorted.length} reading{sorted.length === 1 ? "" : "s"}
+        </span>
+      </div>
+      {sorted.length === 0 && <div style={S.mutedText}>No Observer readings for this session yet.</div>}
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, maxHeight: 720, overflowY: "auto", paddingRight: 4 }}>
+        {anchored.map(({ cq, anchor }) => (
+          <ObserverFeedCard key={cq.id} cq={cq} anchor={anchor} userName={userName} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ObserverFeedCard({ cq, anchor, userName }) {
+  const dims = [
+    "honesty","trust","safety","investment",
+    "anticipation","momentum","progress_belief","frustration",
+    "return_signal","depth_signal","arrival_state",
+    "orientation","goal_aliveness","agency","dependency_risk",
+  ];
+  const lowGood = new Set(["frustration","dependency_risk"]);
+  // Only flag the most extreme few — concerns or breakthrough highs
+  const concerns = dims
+    .filter((k) => cq[k] != null)
+    .map((k) => ({ k, v: cq[k], concern: lowGood.has(k) ? cq[k] >= 7 : cq[k] <= 4 }))
+    .filter((d) => d.concern)
+    .slice(0, 3);
+
+  return (
+    <div style={{
+      borderLeft: "3px solid #6b8e7f",
+      background: "#f4f0eb",
+      borderRadius: 3,
+      padding: "10px 12px",
+      fontSize: 12,
+      color: "#3d2b24",
+      lineHeight: 1.5,
+    }}>
+      {cq.alert && (
+        <div style={{
+          fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em",
+          color: "#a95d49", marginBottom: 5,
+        }}>
+          ⚠ {cq.alert.replace(/_/g, " ")}
+        </div>
+      )}
+
+      {cq.delta_summary && (
+        <div style={{ marginBottom: concerns.length ? 6 : 0 }}>
+          {cq.delta_summary}
+        </div>
+      )}
+
+      {concerns.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+          {concerns.map(({ k, v }) => (
+            <span key={k} style={{
+              fontSize: 10,
+              padding: "1px 6px",
+              borderRadius: 2,
+              background: "#a95d49",
+              color: "#fff",
+            }}>
+              {niceLabel(k)} {v}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ObserverInline({ cq }) {
+  const dims = [
+    "honesty","trust","safety","investment",
+    "anticipation","momentum","progress_belief","frustration",
+    "return_signal","depth_signal","arrival_state",
+    "orientation","goal_aliveness","agency","dependency_risk",
+  ];
+  const lowGood = new Set(["frustration","dependency_risk"]);
+  const highlights = dims
+    .filter((k) => cq[k] != null)
+    .map((k) => ({ k, v: cq[k] }))
+    .filter(({ k, v }) => (lowGood.has(k) ? v >= 7 : v <= 4 || v >= 8))
+    .slice(0, 4);
+  const rationale = cq.rationale || {};
+  return (
+    <div style={{
+      margin: "2px 0",
+      padding: "8px 10px",
+      borderLeft: "3px solid #6b8e7f",
+      background: "#f4f0eb",
+      borderRadius: 3,
+      fontSize: 11,
+      color: "#3d2b24",
+      lineHeight: 1.45,
+    }}>
+      <div style={{
+        fontSize: 9,
+        fontWeight: 700,
+        textTransform: "uppercase",
+        letterSpacing: "0.08em",
+        color: "#6b8e7f",
+        marginBottom: 4,
+        display: "flex",
+        justifyContent: "space-between",
+      }}>
+        <span>Observer</span>
+        {cq.alert && (
+          <span style={{ color: "#a95d49" }}>⚠ {cq.alert.replace(/_/g, " ")}</span>
+        )}
+      </div>
+      {cq.delta_summary && (
+        <div style={{ fontStyle: "italic", marginBottom: highlights.length ? 5 : 0 }}>
+          {cq.delta_summary}
+        </div>
+      )}
+      {highlights.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 4 }}>
+          {highlights.map(({ k, v }) => {
+            const concern = lowGood.has(k) ? v >= 7 : v <= 4;
+            return (
+              <span key={k} style={{
+                fontSize: 10,
+                padding: "1px 6px",
+                borderRadius: 2,
+                background: concern ? "#a95d49" : "#6b8e7f",
+                color: "#fff",
+              }}>
+                {niceLabel(k)} {v}
+              </span>
+            );
+          })}
+        </div>
+      )}
+      {Object.keys(rationale).length > 0 && (
+        <div style={{ fontSize: 10, color: "#5a4540" }}>
+          {Object.entries(rationale).slice(0, 2).map(([k, txt]) => (
+            <div key={k} style={{ marginTop: 2 }}>
+              <strong style={{ color: "#6b8e7f" }}>{niceLabel(k)}:</strong> {txt}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SubstrateSnapshotPane({ substrate }) {
+  const { fragments, hypotheses, keyMoments, dimensions, territory } = substrate;
+  return (
+    <div style={S.card}>
+      <div style={S.cardTitle}>What emerged this session</div>
+
+      <SectionList title={`Key moments (${keyMoments.length})`}>
+        {keyMoments.map((k) => <li key={k.id}>{k.description}</li>)}
+      </SectionList>
+
+      <SectionList title={`Fragments (${fragments.length})`}>
+        {fragments.map((f) => <li key={f.id}>"{f.text}"</li>)}
+      </SectionList>
+
+      <SectionList title={`Hypotheses (${hypotheses.length})`}>
+        {hypotheses.map((h) => (
+          <li key={h.id}>
+            {Number(h.created_session) === Number(h.session_number) ? "new" : h.status}: {h.text}
+          </li>
+        ))}
+      </SectionList>
+
+      <SectionList title={`Dimensions evidenced (${dimensions.length})`}>
+        {dimensions.map((d) => <li key={d.id}>{d.dimension_name}</li>)}
+      </SectionList>
+
+      <SectionList title={`Territory updated (${territory.length})`}>
+        {territory.map((t) => <li key={t.id}>{t.territory} (depth {t.depth || 0}/5)</li>)}
+      </SectionList>
+
+      {!fragments.length && !hypotheses.length && !keyMoments.length && !dimensions.length && !territory.length && (
+        <div style={S.mutedText}>No extraction data for this session yet.</div>
+      )}
+    </div>
+  );
+}
+
+function CQVerdictPane({ cqRow, previousCq, observerNotes }) {
+  return (
+    <div style={S.card}>
+      <div style={S.cardTitle}>CQ verdict</div>
+      {!cqRow && <div style={S.mutedText}>No CQ reading for this session.</div>}
+
+      {cqRow && (
+        <>
+          {CQ_GROUPS.map((g) => (
+            <div key={g.label} style={{ marginBottom: 10 }}>
+              <div style={S.groupTitle}>{g.label}</div>
+              {g.keys.map((key) => {
+                const nowVal = cqRow[key];
+                if (nowVal == null) return null;
+                const prevVal = previousCq?.[key];
+                const delta = prevVal == null ? null : Number(nowVal) - Number(prevVal);
+                return (
+                  <div key={key} style={S.keyValueRow}>
+                    <span>{niceLabel(key)}</span>
+                    <span>
+                      {nowVal}/10
+                      {delta != null && (
+                        <span style={{ marginLeft: 6, color: delta >= 0 ? "#82bd8b" : "#d7958b" }}>
+                          {delta >= 0 ? "+" : ""}
+                          {delta.toFixed(1)}
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </>
+      )}
+
+      <div style={{ marginTop: 12 }}>
+        <div style={S.groupTitle}>Observer note</div>
+        {!observerNotes.length && <div style={S.mutedText}>No observer note for this session.</div>}
+        {observerNotes.map((n) => (
+          <div key={n.id} style={S.noteCard}>
+            <div style={S.noteText}>{n.note}</div>
+            <div style={S.noteMeta}>
+              rubric {n.rubric_version || "-"} - model {n.model_identifier || "-"} - {formatDate(n.created_at)}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function NotesPane({
+  session,
+  observerNotes,
+  messageNotes,
+  messageById,
+  sessionNoteDraft,
+  setSessionNoteDraft,
+  addSessionNote,
+}) {
+  return (
+    <div style={S.card}>
+      <div style={S.cardTitle}>Notes</div>
+
+      <div style={S.groupTitle}>Session notes</div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <input
+          value={sessionNoteDraft}
+          onChange={(e) => setSessionNoteDraft(e.target.value)}
+          placeholder="Add note for this session"
+          style={S.input}
+        />
+        <button onClick={() => addSessionNote(session.id)} style={S.secondaryBtn}>Save</button>
+      </div>
+
+      <div style={{ marginTop: 10 }}>
+        {observerNotes.map((n) => (
+          <div key={n.id} style={S.noteCard}>
+            <div style={S.noteText}>{n.note}</div>
+            <div style={S.noteMeta}>{formatDate(n.created_at)}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ ...S.groupTitle, marginTop: 14 }}>Per-message notes</div>
+      {!messageNotes.length && <div style={S.mutedText}>No per-message notes yet.</div>}
+      {messageNotes.map((n) => {
+        const message = messageById.get(n.message_id);
+        return (
+          <div key={n.id} style={S.noteCard}>
+            <div style={S.noteMeta}>
+              {message ? `${message.role} at ${formatTime(message.created_at)}` : "Message"}
+            </div>
+            <div style={S.noteText}>{n.note}</div>
+            <div style={S.noteMeta}>{formatDate(n.created_at)}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function InvitesTab({
+  invites,
+  newInviteName,
+  setNewInviteName,
+  newInviterName,
+  setNewInviterName,
+  createInvite,
+  deleteInvite,
+  reinvite,
+}) {
+  const origin = "https://verona-demo.vercel.app";
+
+  return (
+    <div style={S.section}>
+      <div style={S.card}>
+        <div style={S.cardTitle}>Create invite</div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input
+            value={newInviteName}
+            onChange={(e) => setNewInviteName(e.target.value)}
+            placeholder="Name"
+            style={S.input}
+          />
+          <input
+            value={newInviterName}
+            onChange={(e) => setNewInviterName(e.target.value)}
+            placeholder="Inviter name (optional)"
+            style={S.input}
+          />
+          <button onClick={createInvite} style={S.primaryBtn}>Create</button>
+        </div>
+      </div>
+
+      <div style={{ ...S.card, marginTop: 14 }}>
+        <div style={S.cardTitle}>Invites</div>
+        {!invites.length && <div style={S.mutedText}>No invites yet.</div>}
+        {invites.map((inv) => {
+          const url = `${origin}/?invite=${inv.token}`;
+          return (
+            <div key={inv.id} style={S.inviteRow}>
+              <div style={{ minWidth: 170 }}>
+                <div style={{ fontWeight: 600 }}>{inv.name}</div>
+                <div style={S.mutedText}>
+                  {inv.inviter_name ? `from ${inv.inviter_name}` : "-"}
+                </div>
+                <div style={S.mutedText}>{inv.used_at ? `Used ${timeAgo(inv.used_at)}` : "Unused"}</div>
+              </div>
+
+              <input
+                value={url}
+                readOnly
+                onClick={(e) => {
+                  e.target.select();
+                  navigator.clipboard.writeText(e.target.value);
+                }}
+                style={{ ...S.input, fontSize: 11 }}
+              />
+
+              <button onClick={() => navigator.clipboard.writeText(url)} style={S.secondaryBtn}>Copy</button>
+              {inv.used_at && <button onClick={() => reinvite(inv.id)} style={S.secondaryBtn}>Reinvite</button>}
+              <button onClick={() => deleteInvite(inv.id)} style={S.dangerBtn}>Delete</button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function PromptsTab() {
   const [versions, setVersions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editContent, setEditContent] = useState("");
@@ -274,52 +2281,81 @@ function Prompts() {
     const { versions: v } = await res.json();
     setVersions(v || []);
     const active = (v || []).find((x) => x.is_active);
-    if (active) setEditContent(active.content);
+    if (active) setEditContent(active.content || "");
     setLoading(false);
   }
 
   useEffect(() => { load(); }, []);
 
+  useEffect(() => {
+    if (versions.length > 0 && !selectedVersion) {
+      const active = versions.find((v) => v.is_active) || versions[0];
+      setSelectedVersion(active);
+      setEditContent(active?.content || "");
+    }
+  }, [versions, selectedVersion]);
+
   const activeVersion = versions.find((v) => v.is_active);
-  const isDirty = selectedVersion ? editContent !== (selectedVersion.content || "") : editContent !== (activeVersion?.content || "");
+  const baseContent = selectedVersion?.content || activeVersion?.content || "";
+  const isDirty = editContent !== baseContent;
 
   function nextRevisionLabel(baseLabel) {
-    const revisionPattern = new RegExp(`^${baseLabel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\.(\\d+)$`);
+    const root = (baseLabel || "v").replace(/\.\d+$/, "");
+    const revisionPattern = new RegExp(`^${root.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}\\.(\\d+)$`);
     let maxRev = 0;
     for (const v of versions) {
-      const m = v.label.match(revisionPattern);
+      const m = (v.label || "").match(revisionPattern);
       if (m) maxRev = Math.max(maxRev, parseInt(m[1], 10));
     }
-    return `${baseLabel}.${maxRev + 1}`;
+    return `${root}.${maxRev + 1}`;
   }
 
   async function saveRevision() {
     if (!selectedVersion || !isDirty) return;
-    setSaving(true); setSaveError(null);
-    const revLabel = nextRevisionLabel(selectedVersion.label.replace(/\.\d+$/, ""));
+    setSaving(true);
+    setSaveError(null);
+    const revLabel = nextRevisionLabel(selectedVersion.label || "v");
     const res = await fetch("/api/prompts", {
       method: "POST",
       headers: { "Content-Type": "application/json", authorization: pw() },
-      body: JSON.stringify({ content: editContent, label: revLabel, notes: `Revision of ${selectedVersion.label}`, key: "angelica" }),
+      body: JSON.stringify({
+        content: editContent,
+        label: revLabel,
+        notes: `Revision of ${selectedVersion.label || "active"}`,
+        key: "angelica",
+      }),
     });
     const json = await res.json();
-    if (json.error) { setSaveError(json.error); setSaving(false); return; }
+    if (json.error) {
+      setSaveError(json.error);
+      setSaving(false);
+      return;
+    }
     setSelectedVersion(null);
     await load();
     setSaving(false);
   }
 
   async function saveNewVersion() {
-    if (!editLabel.trim()) { setSaveError("Give this version a label before saving"); return; }
-    setSaving(true); setSaveError(null);
+    if (!editLabel.trim()) {
+      setSaveError("Give this version a label before saving");
+      return;
+    }
+    setSaving(true);
+    setSaveError(null);
     const res = await fetch("/api/prompts", {
       method: "POST",
       headers: { "Content-Type": "application/json", authorization: pw() },
       body: JSON.stringify({ content: editContent, label: editLabel, notes: editNotes, key: "angelica" }),
     });
     const json = await res.json();
-    if (json.error) { setSaveError(json.error); setSaving(false); return; }
-    setEditLabel(""); setEditNotes("");
+    if (json.error) {
+      setSaveError(json.error);
+      setSaving(false);
+      return;
+    }
+    setEditLabel("");
+    setEditNotes("");
     await load();
     setSaving(false);
   }
@@ -345,150 +2381,79 @@ function Prompts() {
     await load();
   }
 
-  // When versions load, select the active one
-  useEffect(() => {
-    if (versions.length > 0 && !selectedVersion) {
-      const active = versions.find((v) => v.is_active);
-      if (active) setSelectedVersion(active);
-    }
-  }, [versions]);
-
-  if (loading) return <div style={{ padding: 40, color: "#888" }}>Loading…</div>;
+  if (loading) return <div style={{ ...S.section, color: "#9ca29f" }}>Loading prompt manager...</div>;
 
   return (
-    <div style={{ padding: "20px 24px" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-        <div style={S.sectionTitle}>Prompt dashboard</div>
-        <div style={{ fontSize: 11, color: "#666" }}>
-          {activeVersion
-            ? <>Live: <span style={{ color: "#7cb87c" }}>{activeVersion.label}</span> · {activeVersion.content.length.toLocaleString()} chars</>
-            : "No active prompt (using code fallback)"}
-        </div>
-      </div>
+    <div style={S.section}>
+      <div style={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: 14 }}>
+        <div style={S.card}>
+          <div style={S.cardTitle}>Prompt versions ({versions.length})</div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: 24 }}>
-
-        {/* ── Left: version list ── */}
-        <div>
-          {/* ── New version upload ── */}
-          <div style={{ marginBottom: 16, borderBottom: "1px solid #2a2a2a", paddingBottom: 16 }}>
-            <div style={{ fontSize: 11, color: "#888", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
-              Add new version
-            </div>
+          <div style={{ marginBottom: 12 }}>
             <input
               value={editLabel}
               onChange={(e) => setEditLabel(e.target.value)}
-              placeholder="Label (e.g. v3 — shorter opening)"
-              style={{ ...S.input, width: "100%", marginBottom: 6 }}
+              placeholder="New version label"
+              style={{ ...S.input, marginBottom: 6 }}
             />
             <input
               value={editNotes}
               onChange={(e) => setEditNotes(e.target.value)}
               placeholder="Notes (optional)"
-              style={{ ...S.input, width: "100%", marginBottom: 8 }}
+              style={S.input}
             />
-            <label
-              style={{
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                width: "100%", padding: "10px 0", marginBottom: 8,
-                border: "1px dashed #3a3a3a", borderRadius: 6, cursor: "pointer",
-                fontSize: 12, color: "#888", transition: "border-color 0.15s",
-              }}
-              onDragOver={(e) => { e.preventDefault(); e.currentTarget.style.borderColor = "#C4A08A"; }}
-              onDragLeave={(e) => { e.currentTarget.style.borderColor = "#3a3a3a"; }}
-              onDrop={(e) => {
-                e.preventDefault();
-                e.currentTarget.style.borderColor = "#3a3a3a";
-                const file = e.dataTransfer.files[0];
-                if (file) {
-                  const reader = new FileReader();
-                  reader.onload = (ev) => setEditContent(ev.target.result);
-                  reader.readAsText(file);
-                }
-              }}
-            >
-              <input
-                type="file"
-                accept=".md,.txt,.text"
-                style={{ display: "none" }}
-                onChange={(e) => {
-                  const file = e.target.files[0];
-                  if (file) {
-                    const reader = new FileReader();
-                    reader.onload = (ev) => setEditContent(ev.target.result);
-                    reader.readAsText(file);
-                  }
-                  e.target.value = "";
-                }}
-              />
-              ↑ Upload .md / .txt file
-            </label>
-            <div style={{ fontSize: 10, color: "#555", marginBottom: 8 }}>
-              Upload a file or edit directly in the editor, then click save.
-            </div>
             <button
               onClick={saveNewVersion}
-              disabled={saving || !isDirty || !editLabel.trim()}
-              style={{ ...S.btn, width: "100%", opacity: (saving || !isDirty || !editLabel.trim()) ? 0.4 : 1 }}
-            >{saving ? "Saving…" : "Save & activate"}</button>
-            {saveError && <div style={{ fontSize: 11, color: "#E24B4A", marginTop: 6 }}>{saveError}</div>}
-          </div>
-
-          <div style={{ fontSize: 11, color: "#888", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
-            Versions ({versions.length})
+              disabled={saving || !editLabel.trim()}
+              style={{ ...S.primaryBtn, width: "100%", marginTop: 8, opacity: saving ? 0.6 : 1 }}
+            >
+              Save new + activate
+            </button>
           </div>
 
           {versions.map((v) => (
             <div
               key={v.id || "seed"}
-              onClick={() => { setSelectedVersion(v); setEditContent(v.content); }}
+              onClick={() => { setSelectedVersion(v); setEditContent(v.content || ""); }}
               style={{
-                background: selectedVersion?.id === v.id ? "#1e2230" : "#1a1a1a",
-                border: `1px solid ${v.is_active ? "#3a5a3a" : selectedVersion?.id === v.id ? "#3a3a5a" : "#2a2a2a"}`,
-                borderRadius: 6, padding: "10px 14px", marginBottom: 6, cursor: "pointer",
-                transition: "border-color 0.15s",
+                border: `1px solid ${v.is_active ? "#3f5231" : selectedVersion?.id === v.id ? "#3a4f58" : "#26302d"}`,
+                borderRadius: 6,
+                padding: 10,
+                marginBottom: 8,
+                background: selectedVersion?.id === v.id ? "#132226" : "#121817",
+                cursor: "pointer",
               }}
             >
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontWeight: 500, fontSize: 13, color: v.is_active ? "#C4A08A" : "#e0ddd8" }}>{v.label}</span>
-                {v.is_active && <span style={{ fontSize: 9, color: "#7cb87c", textTransform: "uppercase", letterSpacing: "0.06em", background: "#1a2a1a", padding: "2px 6px", borderRadius: 4 }}>Live</span>}
+                <div style={{ fontWeight: 600 }}>{v.label}</div>
+                {v.is_active && <span style={{ fontSize: 10, color: "#82bd8b" }}>LIVE</span>}
               </div>
-              <div style={{ fontSize: 10, color: "#555", marginTop: 3 }}>
+              <div style={S.noteMeta}>
                 {v.created_at ? timeAgo(v.created_at) : "from code"}
-                {v.notes && <span style={{ color: "#666" }}> · {v.notes}</span>}
-              </div>
-              <div style={{ fontSize: 10, color: "#444", marginTop: 2 }}>
-                {v.content.length.toLocaleString()} chars · {v.content.split("\n").length} lines
+                {v.notes ? ` - ${v.notes}` : ""}
               </div>
             </div>
           ))}
+          {saveError && <div style={S.errorText}>{saveError}</div>}
         </div>
 
-        {/* ── Right: editor + actions ── */}
-        <div>
+        <div style={S.card}>
           {selectedVersion && (
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-              <div style={{ fontSize: 13, fontWeight: 500 }}>
-                {selectedVersion.label}
-                {selectedVersion.is_active && <span style={{ marginLeft: 8, fontSize: 10, color: "#7cb87c" }}>LIVE</span>}
-              </div>
+              <div style={{ fontWeight: 600 }}>{selectedVersion.label}</div>
               <div style={{ display: "flex", gap: 8 }}>
-                <button
-                  onClick={() => navigator.clipboard.writeText(editContent)}
-                  style={{ fontSize: 11, color: "#aaa", background: "none", border: "1px solid #333", borderRadius: 4, padding: "4px 10px", cursor: "pointer" }}
-                >Copy</button>
+                <button onClick={() => navigator.clipboard.writeText(editContent)} style={S.secondaryBtn}>Copy</button>
                 {!selectedVersion.is_active && selectedVersion.id && (
                   <button
                     onClick={() => activateVersion(selectedVersion.id)}
                     disabled={activatingId === selectedVersion.id}
-                    style={{ fontSize: 11, color: "#C4A08A", background: "none", border: "1px solid #3a3020", borderRadius: 4, padding: "4px 10px", cursor: "pointer" }}
-                  >{activatingId === selectedVersion.id ? "Activating…" : "Make live"}</button>
+                    style={S.secondaryBtn}
+                  >
+                    {activatingId === selectedVersion.id ? "Activating..." : "Make live"}
+                  </button>
                 )}
                 {!selectedVersion.is_active && selectedVersion.id && (
-                  <button
-                    onClick={() => { deleteVersion(selectedVersion.id); setSelectedVersion(null); }}
-                    style={{ fontSize: 11, color: "#E24B4A", background: "none", border: "1px solid #3a2020", borderRadius: 4, padding: "4px 10px", cursor: "pointer" }}
-                  >Delete</button>
+                  <button onClick={() => deleteVersion(selectedVersion.id)} style={S.dangerBtn}>Delete</button>
                 )}
               </div>
             </div>
@@ -498,833 +2463,397 @@ function Prompts() {
             value={editContent}
             onChange={(e) => setEditContent(e.target.value)}
             style={{
-              width: "100%", minHeight: 560, background: "#111", color: "#d0cdc8",
-              border: `1px solid ${isDirty ? "#5a4a1a" : "#2a2a2a"}`, borderRadius: 6, padding: 16,
-              fontSize: 12, lineHeight: 1.7, fontFamily: "monospace",
-              resize: "vertical", boxSizing: "border-box", outline: "none",
+              width: "100%",
+              minHeight: 560,
+              background: "#111",
+              color: "#d8d1c8",
+              border: `1px solid ${isDirty ? "#6a5631" : "#2a3331"}`,
+              borderRadius: 8,
+              padding: 12,
+              fontFamily: "monospace",
+              lineHeight: 1.5,
+              resize: "vertical",
+              boxSizing: "border-box",
             }}
           />
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 4 }}>
-            <div style={{ fontSize: 11, color: "#555" }}>
-              {editContent.length.toLocaleString()} chars · {editContent.split("\n").length} lines
-              {isDirty && <span style={{ color: "#d4a84a", marginLeft: 12 }}>● Unsaved changes</span>}
-            </div>
-            {isDirty && selectedVersion && (
-              <button
-                onClick={saveRevision}
-                disabled={saving}
-                style={{ fontSize: 11, color: "#C4A08A", background: "none", border: "1px solid #3a3020", borderRadius: 4, padding: "4px 14px", cursor: "pointer", opacity: saving ? 0.4 : 1 }}
-              >{saving ? "Saving…" : `Save as ${nextRevisionLabel(selectedVersion.label.replace(/\.\d+$/, ""))}`}</button>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
-// --- Adoption view ---------------------------------------------------
-
-function Adoption({ data, onSelectUser }) {
-  const rows = useMemo(() => data.users.map((u) => {
-    const userSessions = data.sessions.filter((s) => s.user_id === u.id);
-    const lastSession = userSessions[0];
-    const lastActive = lastSession?.started_at;
-    const totalMins = userSessions.reduce((acc, s) => acc + (durationMin(s.started_at, s.ended_at) || 0), 0);
-    const inviterUser = u.invited_by_name ? data.users.find((other) => other.display_name === u.invited_by_name) : null;
-    return {
-      id: u.id,
-      shortId: u.id.slice(0, 8),
-      name: u.display_name || u.id.slice(0, 8),
-      invitedBy: u.invited_by_name,
-      invitedByShortId: inviterUser ? inviterUser.id.slice(0, 8) : null,
-      joined: u.created_at,
-      lastActive,
-      sessionsCount: userSessions.length,
-      totalMins,
-      currentPhase: lastSession?.phase || "—",
-      status: userStatus(lastActive),
-    };
-  }).sort((a, b) => {
-    if (!a.lastActive) return 1;
-    if (!b.lastActive) return -1;
-    return new Date(b.lastActive) - new Date(a.lastActive);
-  }), [data]);
-
-  const totalUsers = rows.length;
-  const activeLast7 = rows.filter((r) => r.lastActive && (Date.now() - new Date(r.lastActive).getTime()) < 7 * 86400000).length;
-  const sessionsLast7 = data.sessions.filter((s) => (Date.now() - new Date(s.started_at).getTime()) < 7 * 86400000).length;
-
-  if (rows.length === 0) {
-    return <div style={{ padding: 40, textAlign: "center", color: "#888" }}>No users yet. Create an invite and share the link.</div>;
-  }
-
-  return (
-    <div style={{ padding: "20px 24px" }}>
-      <div style={S.statsRow}>
-        <Stat label="Total users" value={totalUsers} />
-        <Stat label="Active last 7 days" value={activeLast7} />
-        <Stat label="Sessions last 7 days" value={sessionsLast7} />
-      </div>
-
-      <div style={{ marginTop: 24 }}>
-        <div style={S.sectionTitle}>Users</div>
-        <div style={S.tableWrap}>
-          <div style={{ ...S.tableRow, ...S.tableHead }}>
-            <div style={{ flex: 2 }}>Name</div>
-            <div style={{ flex: 1.5 }}>Invited by</div>
-            <div style={{ flex: 1, textAlign: "center" }}>Status</div>
-            <div style={{ flex: 1.2 }}>Joined</div>
-            <div style={{ flex: 1.2 }}>Last active</div>
-            <div style={{ flex: 0.8, textAlign: "right" }}>Sessions</div>
-            <div style={{ flex: 0.8, textAlign: "right" }}>Time</div>
-            <div style={{ flex: 1 }}>Phase</div>
-          </div>
-          {rows.map((r) => (
-            <div key={r.id} style={S.tableRow} onClick={() => onSelectUser(r.id)} className="va-row">
-              <div style={{ flex: 2, fontWeight: 500 }}>
-                {r.name}
-                <span style={{ display: "block", fontSize: 10, color: "#555", fontWeight: 400, fontFamily: "monospace", marginTop: 1 }}>{r.shortId}</span>
-              </div>
-              <div style={{ flex: 1.5, color: "#aaa", fontSize: 12 }}>
-                {r.invitedBy || "—"}
-                {r.invitedByShortId && <span style={{ display: "block", fontSize: 10, color: "#555", fontFamily: "monospace", marginTop: 1 }}>{r.invitedByShortId}</span>}
-              </div>
-              <div style={{ flex: 1, textAlign: "center" }}>
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, color: r.status.color }}>
-                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: r.status.color }} />
-                  {r.status.label}
-                </span>
-              </div>
-              <div style={{ flex: 1.2, color: "#aaa", fontSize: 12 }}>{formatDate(r.joined)}</div>
-              <div style={{ flex: 1.2, color: "#aaa", fontSize: 12 }}>{timeAgo(r.lastActive)}</div>
-              <div style={{ flex: 0.8, textAlign: "right", fontWeight: 500 }}>{r.sessionsCount}</div>
-              <div style={{ flex: 0.8, textAlign: "right", color: "#aaa", fontSize: 12 }}>{r.totalMins ? `${r.totalMins}m` : "—"}</div>
-              <div style={{ flex: 1, color: "#C4A08A", fontSize: 12, textTransform: "capitalize" }}>{r.currentPhase}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <style>{`.va-row:hover { background: #262626 !important; }`}</style>
-    </div>
-  );
-}
-
-// --- User Journey ----------------------------------------------------
-
-function UserProfile({ data, userId, onSelectSession, onDeleteUser }) {
-  const user = data.users.find((u) => u.id === userId);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [deleteError, setDeleteError] = useState(null);
-  const [deleting, setDeleting] = useState(false);
-
-  const userSessions = useMemo(
-    () => data.sessions.filter((s) => s.user_id === userId).sort((a, b) => new Date(b.started_at) - new Date(a.started_at)),
-    [data.sessions, userId]
-  );
-
-  const latestSession = userSessions[0];
-  const status = userStatus(latestSession?.started_at);
-
-  // Scores — latest across all sessions
-  const userScores = useMemo(
-    () => data.scores.filter((s) => s.user_id === userId).sort((a, b) => new Date(b.measured_at) - new Date(a.measured_at)),
-    [data.scores, userId]
-  );
-  const latestScore = userScores[0];
-
-  // CQ — latest entry
-  const userCQ = useMemo(
-    () => (data.cq || []).filter((c) => c.user_id === userId).sort((a, b) => new Date(b.measured_at) - new Date(a.measured_at)),
-    [data.cq, userId]
-  );
-  const latestCQ = userCQ[0];
-
-  const essentialTruth = data.essentialTruth.find((t) => t.user_id === userId);
-  const activeHypotheses = data.hypotheses.filter((h) => h.user_id === userId && h.status === "active");
-  const resolvedHypotheses = data.hypotheses.filter((h) => h.user_id === userId && ["confirmed", "revised", "discarded"].includes(h.status));
-  const silences = data.silences.filter((s) => s.user_id === userId).sort((a, b) => (b.sessions_absent || 0) - (a.sessions_absent || 0));
-  const topDimensions = data.dimensions.filter((d) => d.user_id === userId).sort((a, b) => (b.weight || 0) - (a.weight || 0)).slice(0, 10);
-
-  if (!user) return <div style={{ padding: 40, color: "#888" }}>User not found</div>;
-
-  const phaseColor = { trust: "#888", hypothesis: "#d4a84a", diffusion: "#C4A08A" };
-
-  return (
-    <div style={{ padding: "20px 24px" }}>
-
-      {/* ── Header ── */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", paddingBottom: 16, borderBottom: "1px solid #2a2a2a", marginBottom: 24 }}>
-        <div>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
-            <div style={{ fontSize: 26, fontWeight: 500, fontFamily: "'Cormorant Garamond',serif", color: "#C4A08A" }}>
-              {user.display_name || user.id.slice(0, 8)}
-            </div>
-            {latestSession?.phase && (
-              <span style={{ fontSize: 11, color: phaseColor[latestSession.phase] || "#888", background: "#222", border: "1px solid #333", borderRadius: 12, padding: "2px 10px", textTransform: "capitalize" }}>
-                {latestSession.phase}
-              </span>
-            )}
-            <span style={{ fontSize: 11, color: status.color, display: "flex", alignItems: "center", gap: 5 }}>
-              <span style={{ width: 7, height: 7, borderRadius: "50%", background: status.color }} />{status.label}
-            </span>
-          </div>
-          <div style={{ fontSize: 11, color: "#555", marginTop: 6, fontFamily: "monospace" }}>
-            {user.id.slice(0, 8)}
-            <span style={{ fontFamily: "inherit", fontSize: 12, color: "#666", marginLeft: 12 }}>
-              Joined {formatDate(user.created_at)}
-              {user.invited_by_name && ` · Invited by ${user.invited_by_name}`}
-              {` · ${userSessions.length} session${userSessions.length === 1 ? "" : "s"}`}
-              {latestSession && ` · Last active ${timeAgo(latestSession.started_at)}`}
-            </span>
-          </div>
-        </div>
-        <button
-          onClick={() => { setShowDeleteConfirm(true); setDeleteError(null); }}
-          style={{ fontSize: 12, color: "#E24B4A", background: "none", border: "1px solid #3a2020", borderRadius: 4, padding: "6px 14px", cursor: "pointer", flexShrink: 0 }}
-        >
-          Delete user
-        </button>
-      </div>
-
-      {/* ── Relationship with Angelica ── */}
-      {(latestScore || essentialTruth || latestCQ) && (
-        <div style={{ marginBottom: 28 }}>
-          <div style={S.sectionTitle}>Relationship with Angelica</div>
-
-          {latestScore && (
-            <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 16 }}>
-              {[
-                ["Trust", latestScore.trust_score],
-                ["Depth", latestScore.depth_score],
-                ["Readiness", latestScore.readiness_score],
-                ["Self-knowledge gap", latestScore.self_knowledge_gap],
-                ["Emotional availability", latestScore.emotional_availability],
-              ].map(([label, val]) => val != null && (
-                <div key={label} style={{ flex: "1 1 150px", minWidth: 130 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#888", marginBottom: 4 }}>
-                    <span>{label}</span><span style={{ fontWeight: 500, color: "#e0ddd8" }}>{val}/10</span>
-                  </div>
-                  <div style={{ height: 3, background: "#2a2a2a", borderRadius: 2 }}>
-                    <div style={{ height: "100%", width: `${val * 10}%`, background: "#C4A08A", borderRadius: 2 }} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {essentialTruth?.text && (
-            <div style={{ padding: "12px 16px", background: "#1e1e1e", borderRadius: 6, borderLeft: "3px solid #C4A08A", marginBottom: 14 }}>
-              <div style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
-                Essential truth · confidence {essentialTruth.confidence}/5
-              </div>
-              <div style={{ fontSize: 13, fontStyle: "italic", color: "#e0ddd8", lineHeight: 1.6 }}>"{essentialTruth.text}"</div>
-            </div>
-          )}
-
-          {latestCQ && (
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {[
-                ["Honesty", latestCQ.honesty],
-                ["Safety", latestCQ.safety],
-                ["Trust", latestCQ.trust],
-                ["Investment", latestCQ.investment],
-                ["Momentum", latestCQ.momentum],
-                ["Depth signal", latestCQ.depth_signal],
-                ["Return signal", latestCQ.return_signal],
-                ["Goal aliveness", latestCQ.goal_aliveness],
-              ].map(([label, val]) => val != null && (
-                <div key={label} style={{
-                  fontSize: 11, padding: "4px 10px", background: "#1e1e1e", borderRadius: 12,
-                  border: "1px solid #2a2a2a",
-                  color: val >= 7 ? "#7cb87c" : val <= 3 ? "#E24B4A" : "#aaa",
-                }}>
-                  {label} <strong>{val}</strong>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── Portrait + Silences grid ── */}
-      {(activeHypotheses.length > 0 || resolvedHypotheses.length > 0 || silences.length > 0 || topDimensions.length > 0) && (
-        <div className="va-grid" style={{ marginBottom: 28 }}>
-          <div>
-            {activeHypotheses.length > 0 && (
-              <div style={S.portraitSection}>
-                <div style={S.sectionTitle}>Active hypotheses ({activeHypotheses.length})</div>
-                {activeHypotheses.map((h) => (
-                  <div key={h.id} style={S.hypothesisChip}>{h.text}</div>
-                ))}
-              </div>
-            )}
-            {silences.length > 0 && (
-              <div style={S.portraitSection}>
-                <div style={S.sectionTitle}>Silences</div>
-                {silences.slice(0, 6).map((s) => (
-                  <div key={s.id} style={S.dimRow}>
-                    <span style={{ fontSize: 11 }}>{s.topic}</span>
-                    <span style={{ fontSize: 10, color: "#888" }}>absent {s.sessions_absent}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-            {resolvedHypotheses.length > 0 && (
-              <div style={S.portraitSection}>
-                <div style={S.sectionTitle}>Resolved hypotheses ({resolvedHypotheses.length})</div>
-                {resolvedHypotheses.slice(0, 4).map((h) => (
-                  <div key={h.id} style={{ ...S.hypothesisChip, opacity: 0.7 }}>
-                    <span style={{ color: h.status === "confirmed" ? "#7cb87c" : h.status === "discarded" ? "#E24B4A" : "#d4a84a", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em", marginRight: 6 }}>
-                      {h.status}
-                    </span>
-                    {h.text}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div>
-            {topDimensions.length > 0 && (
-              <div style={S.portraitSection}>
-                <div style={S.sectionTitle}>Portrait dimensions</div>
-                {topDimensions.map((d) => (
-                  <div key={d.id} style={S.dimRow}>
-                    <span style={{ fontSize: 11 }}>{d.dimension_name}</span>
-                    <span style={{ fontSize: 10, color: "#888" }}>{d.resolution} · w{d.weight}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ── Conversations ── */}
-      <div>
-        <div style={S.sectionTitle}>Conversations ({userSessions.length})</div>
-        {userSessions.length === 0 && <div style={S.empty}>No conversations yet</div>}
-        {userSessions.map((s) => (
-          <SessionCard key={s.id} session={s} data={data} onClick={() => onSelectSession(s.id)} />
-        ))}
-      </div>
-
-      {/* ── Delete modal ── */}
-      {showDeleteConfirm && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}>
-          <div style={{ background: "#1a1a1a", border: "1px solid #3a2020", borderRadius: 8, padding: 32, maxWidth: 400, width: "90%" }}>
-            <div style={{ fontSize: 16, fontWeight: 500, color: "#E24B4A", marginBottom: 12 }}>Delete user?</div>
-            <div style={{ fontSize: 13, color: "#aaa", lineHeight: 1.6, marginBottom: 20 }}>
-              This will permanently delete <strong style={{ color: "#e0ddd8" }}>{user.display_name || user.id.slice(0, 8)}</strong> and all their data — conversations, portrait, hypotheses, scores, and dimensions. This cannot be undone.
-            </div>
-            {deleteError && <div style={{ fontSize: 12, color: "#E24B4A", marginBottom: 12 }}>{deleteError}</div>}
-            <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
-              <button onClick={() => setShowDeleteConfirm(false)} disabled={deleting}
-                style={{ fontSize: 13, color: "#aaa", background: "none", border: "1px solid #333", borderRadius: 4, padding: "8px 18px", cursor: "pointer" }}>
-                Cancel
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8 }}>
+            <div style={S.mutedText}>{editContent.length.toLocaleString()} chars</div>
+            {selectedVersion && isDirty && (
+              <button onClick={saveRevision} disabled={saving} style={S.primaryBtn}>
+                {saving ? "Saving..." : `Save as ${nextRevisionLabel(selectedVersion.label || "v")}`}
               </button>
-              <button
-                onClick={async () => {
-                  setDeleting(true);
-                  try { await onDeleteUser(userId); }
-                  catch (e) { setDeleteError(e.message); setDeleting(false); }
-                }}
-                disabled={deleting}
-                style={{ fontSize: 13, color: "#fff", background: "#7a1a1a", border: "none", borderRadius: 4, padding: "8px 18px", cursor: deleting ? "not-allowed" : "pointer", opacity: deleting ? 0.6 : 1 }}
-              >
-                {deleting ? "Deleting…" : "Yes, delete"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function SessionCard({ session, data, onClick }) {
-  const sessionFragments = data.fragments.filter((f) => f.user_id === session.user_id && f.session_number === session.session_number);
-  const sessionHypotheses = data.hypotheses.filter((h) => h.user_id === session.user_id && (h.created_session === session.session_number || h.resolved_session === session.session_number));
-  const sessionKeyMoments = data.keyMoments.filter((k) => k.user_id === session.user_id && k.session_number === session.session_number);
-  const sessionTerritoryUpdates = data.territory.filter((t) => t.user_id === session.user_id && t.last_visited_session === session.session_number);
-  const sessionDimsEvidenced = data.dimensions.filter((d) => d.user_id === session.user_id && d.last_evidence_session === session.session_number);
-  const sessionMessages = data.messages.filter((m) => m.session_id === session.id);
-  const sessionScores = data.scores.filter((s) => s.session_id === session.id);
-  const latestScore = sessionScores[sessionScores.length - 1];
-  const mins = durationMin(session.started_at, session.ended_at);
-
-  return (
-    <div style={S.sessionCard} onClick={onClick} className="va-card">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
-        <div style={{ fontSize: 14, fontWeight: 500 }}>
-          Session #{session.session_number}
-          <span style={{ color: "#C4A08A", fontSize: 12, fontWeight: 400, marginLeft: 10 }}>{session.phase}</span>
-        </div>
-        <div style={{ fontSize: 11, color: "#888" }}>
-          {timeAgo(session.started_at)} · {mins != null ? `${mins}m` : "—"} · {sessionMessages.length} turns
-        </div>
-      </div>
-
-      {(sessionFragments.length > 0 || sessionHypotheses.length > 0 || sessionKeyMoments.length > 0 || sessionTerritoryUpdates.length > 0 || sessionDimsEvidenced.length > 0) && (
-        <div style={{ marginBottom: 10 }}>
-          <div style={S.portraitLabel}>What emerged</div>
-          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.6, color: "#d0cdc8" }}>
-            {sessionFragments.slice(0, 3).map((f) => (<li key={f.id}>Fragment: "{f.text}"</li>))}
-            {sessionFragments.length > 3 && <li style={{ color: "#666", listStyle: "none", paddingLeft: 0 }}>+{sessionFragments.length - 3} more fragments</li>}
-            {sessionHypotheses.map((h) => (<li key={h.id}>Hypothesis {h.created_session === session.session_number ? "added" : h.status}: {h.text}</li>))}
-            {sessionKeyMoments.map((k) => (<li key={k.id}><span style={{ color: "#C4A08A" }}>Key moment ({k.moment_type}):</span> {k.description}</li>))}
-            {sessionTerritoryUpdates.map((t) => (<li key={t.id}>Territory: {t.territory} (depth {t.depth}/5)</li>))}
-            {sessionDimsEvidenced.length > 0 && (<li style={{ color: "#888" }}>{sessionDimsEvidenced.length} dimension{sessionDimsEvidenced.length === 1 ? "" : "s"} evidenced</li>)}
-          </ul>
-        </div>
-      )}
-
-      {latestScore && (
-        <div style={{ display: "flex", gap: 16, fontSize: 11, color: "#888", paddingTop: 8, borderTop: "1px solid #2a2a2a" }}>
-          <span>Trust {latestScore.trust_score ?? "—"}</span>
-          <span>Depth {latestScore.depth_score ?? "—"}</span>
-          <span>Readiness {latestScore.readiness_score ?? "—"}</span>
-          <span style={{ marginLeft: "auto", color: "#C4A08A" }}>View conversation →</span>
-        </div>
-      )}
-      {!latestScore && (
-        <div style={{ fontSize: 11, color: "#C4A08A", textAlign: "right", paddingTop: 8, borderTop: "1px solid #2a2a2a" }}>View conversation →</div>
-      )}
-      <style>{`.va-card:hover { background: #252525 !important; border-color: #444 !important; }`}</style>
-    </div>
-  );
-}
-
-// --- Session Analysis ------------------------------------------------
-
-function SessionAnalysis({ data, userId, sessionId }) {
-  const user = data.users.find((u) => u.id === userId);
-  const session = data.sessions.find((s) => s.id === sessionId);
-
-  const messages = useMemo(
-    () => data.messages.filter((m) => m.session_id === sessionId).sort((a, b) => new Date(a.created_at) - new Date(b.created_at)),
-    [data.messages, sessionId]
-  );
-
-  if (!session || !user) return <div style={{ padding: 40, color: "#888" }}>Session not found</div>;
-
-  const sessionFragments = data.fragments.filter((f) => f.user_id === userId && f.session_number === session.session_number);
-  const sessionHypotheses = data.hypotheses.filter((h) => h.user_id === userId && (h.created_session === session.session_number || h.resolved_session === session.session_number));
-  const sessionKeyMoments = data.keyMoments.filter((k) => k.user_id === userId && k.session_number === session.session_number);
-  const sessionTerritoryUpdates = data.territory.filter((t) => t.user_id === userId && t.last_visited_session === session.session_number);
-  const sessionDimsEvidenced = data.dimensions.filter((d) => d.user_id === userId && d.last_evidence_session === session.session_number).sort((a, b) => (b.weight || 0) - (a.weight || 0));
-  const sessionScores = data.scores.filter((s) => s.session_id === sessionId);
-  const firstScore = sessionScores[0];
-  const lastScore = sessionScores[sessionScores.length - 1];
-  const mins = durationMin(session.started_at, session.ended_at);
-  const userName = user.display_name || user.id.slice(0, 8);
-
-  function downloadText(filename, text) {
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
-    a.download = filename;
-    a.click();
-  }
-
-  function exportConversation() {
-    const header = `Verona — ${userName} · Session #${session.session_number}\n${formatDate(session.started_at)} · ${mins != null ? `${mins}m` : "—"} · ${messages.length} turns · phase: ${session.phase}\n${"─".repeat(60)}\n\n`;
-    const body = messages.map(m => `[${m.role === "user" ? userName : "Angelica"}  ${formatTime(m.created_at)}]\n${m.content}`).join("\n\n");
-    downloadText(`verona-${userName.toLowerCase()}-session${session.session_number}.txt`, header + body);
-  }
-
-  function exportConversationAndAnalysis() {
-    const lines = [];
-    lines.push(`VERONA — ${userName} · Session #${session.session_number}`);
-    lines.push(`${formatDate(session.started_at)} · ${mins != null ? `${mins}m` : "—"} · ${messages.length} turns · phase: ${session.phase}`);
-    lines.push("═".repeat(60));
-    lines.push("");
-
-    lines.push("CONVERSATION");
-    lines.push("─".repeat(40));
-    messages.forEach(m => {
-      lines.push(`[${m.role === "user" ? userName : "Angelica"}  ${formatTime(m.created_at)}]`);
-      lines.push(m.content);
-      lines.push("");
-    });
-
-    if (lastScore) {
-      lines.push("═".repeat(60));
-      lines.push("SCORES");
-      lines.push("─".repeat(40));
-      [["Trust", lastScore.trust_score], ["Depth", lastScore.depth_score], ["Readiness", lastScore.readiness_score], ["Self-knowledge gap", lastScore.self_knowledge_gap], ["Emotional availability", lastScore.emotional_availability]].forEach(([label, val]) => {
-        if (val != null) lines.push(`${label}: ${val}/10`);
-      });
-      lines.push("");
-    }
-
-    if (sessionKeyMoments.length > 0) {
-      lines.push("═".repeat(60));
-      lines.push("KEY MOMENTS");
-      lines.push("─".repeat(40));
-      sessionKeyMoments.forEach(k => {
-        lines.push(`[${k.moment_type || "moment"}] ${k.description}`);
-        if (k.portrait_impact) lines.push(`  Impact: ${k.portrait_impact}`);
-      });
-      lines.push("");
-    }
-
-    if (sessionHypotheses.length > 0) {
-      lines.push("═".repeat(60));
-      lines.push("HYPOTHESES");
-      lines.push("─".repeat(40));
-      sessionHypotheses.forEach(h => {
-        const tag = h.created_session === session.session_number ? "NEW" : h.status.toUpperCase();
-        lines.push(`[${tag}] ${h.text}`);
-        if (h.evidence) lines.push(`  Evidence: ${h.evidence}`);
-      });
-      lines.push("");
-    }
-
-    if (sessionFragments.length > 0) {
-      lines.push("═".repeat(60));
-      lines.push("FRAGMENTS");
-      lines.push("─".repeat(40));
-      sessionFragments.forEach(f => {
-        lines.push(`"${f.text}"`);
-        if (f.significance) lines.push(`  ${f.significance}`);
-      });
-      lines.push("");
-    }
-
-    if (sessionDimsEvidenced.length > 0) {
-      lines.push("═".repeat(60));
-      lines.push("DIMENSIONS EVIDENCED");
-      lines.push("─".repeat(40));
-      sessionDimsEvidenced.forEach(d => lines.push(`${d.dimension_name}: ${d.resolution} (confidence ${d.confidence}, weight ${d.weight})`));
-      lines.push("");
-    }
-
-    if (sessionTerritoryUpdates.length > 0) {
-      lines.push("═".repeat(60));
-      lines.push("TERRITORY COVERED");
-      lines.push("─".repeat(40));
-      sessionTerritoryUpdates.forEach(t => lines.push(`${t.territory}: depth ${t.depth}/5`));
-      lines.push("");
-    }
-
-    downloadText(`verona-${userName.toLowerCase()}-session${session.session_number}-full.txt`, lines.join("\n"));
-  }
-
-  return (
-    <div style={{ padding: "20px 24px" }}>
-      <div style={S.userHeader}>
-        <div>
-          <div style={{ fontSize: 20, fontWeight: 500, fontFamily: "'Cormorant Garamond',serif", color: "#C4A08A" }}>
-            Session #{session.session_number}
-          </div>
-          <div style={{ fontSize: 12, color: "#888", marginTop: 4 }}>
-            {formatDate(session.started_at)} · {mins != null ? `${mins}m` : "—"} · {messages.length} turns · phase: {session.phase}
-          </div>
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={exportConversation} style={S.btn}>Export conversation</button>
-          <button onClick={exportConversationAndAnalysis} style={S.btn}>Export with analysis</button>
-        </div>
-      </div>
-
-      <div className="va-grid-wide">
-        <div>
-          <div style={S.sectionTitle}>Conversation</div>
-          {messages.length === 0 && <div style={S.empty}>No messages</div>}
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {messages.map((m) => {
-              const isUser = m.role === "user";
-              return (
-                <div key={m.id} style={{
-                  padding: "12px 14px", borderRadius: 6,
-                  background: isUser ? "#252525" : "#1e2230",
-                  borderLeft: isUser ? "2px solid #555" : "2px solid #7F77DD",
-                }}>
-                  <div style={{ fontSize: 10, textTransform: "uppercase", color: "#888", letterSpacing: "0.06em", marginBottom: 6, display: "flex", justifyContent: "space-between" }}>
-                    <span>{isUser ? userName : "Angelica"}</span>
-                    <span>{formatTime(m.created_at)}</span>
-                  </div>
-                  <div style={{ fontSize: 13, lineHeight: 1.6, whiteSpace: "pre-wrap", color: "#e0ddd8" }}>{m.content}</div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        <div>
-          <div style={S.sectionTitle}>Analysis</div>
-
-          {lastScore && (
-            <div style={S.portraitSection}>
-              <div style={S.portraitLabel}>Scores {firstScore !== lastScore ? "(at session end)" : ""}</div>
-              {[
-                ["Trust", lastScore.trust_score, firstScore?.trust_score],
-                ["Depth", lastScore.depth_score, firstScore?.depth_score],
-                ["Readiness", lastScore.readiness_score, firstScore?.readiness_score],
-                ["Self-knowledge gap", lastScore.self_knowledge_gap, firstScore?.self_knowledge_gap],
-                ["Emotional availability", lastScore.emotional_availability, firstScore?.emotional_availability],
-              ].map(([label, val, startVal]) => {
-                if (val == null) return null;
-                const delta = startVal != null && startVal !== val ? val - startVal : null;
-                return (
-                  <div key={label} style={S.dimRow}>
-                    <span style={{ fontSize: 11 }}>{label}</span>
-                    <span style={{ fontSize: 11, fontWeight: 500 }}>
-                      {val}/10
-                      {delta != null && (
-                        <span style={{ marginLeft: 6, color: delta > 0 ? "#7cb87c" : "#E24B4A", fontSize: 10 }}>
-                          {delta > 0 ? "+" : ""}{delta.toFixed(1)}
-                        </span>
-                      )}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {sessionKeyMoments.length > 0 && (
-            <div style={S.portraitSection}>
-              <div style={S.portraitLabel}>Key moments ({sessionKeyMoments.length})</div>
-              {sessionKeyMoments.map((k) => (
-                <div key={k.id} style={S.analysisChip}>
-                  <span style={{ color: "#C4A08A", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em", marginRight: 6 }}>{k.moment_type || "moment"}</span>
-                  {k.description}
-                  {k.portrait_impact && <div style={{ fontSize: 10, color: "#666", marginTop: 4, fontStyle: "italic" }}>Impact: {k.portrait_impact}</div>}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {sessionFragments.length > 0 && (
-            <div style={S.portraitSection}>
-              <div style={S.portraitLabel}>Fragments captured ({sessionFragments.length})</div>
-              {sessionFragments.map((f) => (
-                <div key={f.id} style={S.analysisChip}>
-                  "{f.text}"
-                  {f.context && <div style={{ fontSize: 10, color: "#666", marginTop: 4 }}>Context: {f.context}</div>}
-                  {f.significance && <div style={{ fontSize: 10, color: "#888", marginTop: 4, fontStyle: "italic" }}>{f.significance}</div>}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {sessionHypotheses.length > 0 && (
-            <div style={S.portraitSection}>
-              <div style={S.portraitLabel}>Hypotheses ({sessionHypotheses.length})</div>
-              {sessionHypotheses.map((h) => {
-                const isNewThisSession = h.created_session === session.session_number;
-                return (
-                  <div key={h.id} style={S.analysisChip}>
-                    <span style={{
-                      color: h.status === "confirmed" ? "#7cb87c" : h.status === "discarded" ? "#E24B4A" : h.status === "revised" ? "#d4a84a" : "#C4A08A",
-                      fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em", marginRight: 6
-                    }}>{isNewThisSession ? "new" : h.status}</span>
-                    {h.text}
-                    {h.evidence && <div style={{ fontSize: 10, color: "#888", marginTop: 4, fontStyle: "italic" }}>Evidence: {h.evidence}</div>}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {sessionDimsEvidenced.length > 0 && (
-            <div style={S.portraitSection}>
-              <div style={S.portraitLabel}>Dimensions evidenced ({sessionDimsEvidenced.length})</div>
-              {sessionDimsEvidenced.slice(0, 10).map((d) => (
-                <div key={d.id} style={S.dimRow}>
-                  <span style={{ fontSize: 11 }}>{d.dimension_name}</span>
-                  <span style={{ fontSize: 10, color: "#888" }}>{d.resolution} · conf {d.confidence}</span>
-                </div>
-              ))}
-              {sessionDimsEvidenced.length > 10 && <div style={{ fontSize: 10, color: "#666", marginTop: 4 }}>+{sessionDimsEvidenced.length - 10} more</div>}
-            </div>
-          )}
-
-          {sessionTerritoryUpdates.length > 0 && (
-            <div style={S.portraitSection}>
-              <div style={S.portraitLabel}>Territory covered</div>
-              {sessionTerritoryUpdates.map((t) => (
-                <div key={t.id} style={S.dimRow}>
-                  <span style={{ fontSize: 11 }}>{t.territory}</span>
-                  <span style={{ fontSize: 10, color: "#888" }}>depth {t.depth}/5</span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {sessionFragments.length === 0 && sessionHypotheses.length === 0 && sessionKeyMoments.length === 0 && sessionDimsEvidenced.length === 0 && !lastScore && (
-            <div style={S.empty}>No analysis data for this session yet</div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// --- Conversations list ----------------------------------------------
-
-function ConversationsList({ data, onSelectSession }) {
-  const rows = useMemo(() => data.sessions.map((s) => {
-    const user = data.users.find((u) => u.id === s.user_id);
-    const msgs = data.messages.filter((m) => m.session_id === s.id);
-    const sessionScores = data.scores.filter((sc) => sc.session_id === s.id).sort((a, b) => new Date(b.measured_at) - new Date(a.measured_at));
-    const latestScore = sessionScores[0];
-    return {
-      id: s.id,
-      userId: s.user_id,
-      userName: user?.display_name || user?.id.slice(0, 8) || "Unknown",
-      sessionNumber: s.session_number,
-      phase: s.phase,
-      startedAt: s.started_at,
-      mins: durationMin(s.started_at, s.ended_at),
-      turns: msgs.length,
-      trust: latestScore?.trust_score,
-      depth: latestScore?.depth_score,
-      readiness: latestScore?.readiness_score,
-    };
-  }).sort((a, b) => new Date(b.startedAt) - new Date(a.startedAt)), [data]);
-
-  return (
-    <div style={{ padding: "20px 24px" }}>
-      <div style={S.tableWrap}>
-        <div style={{ ...S.tableRow, ...S.tableHead }}>
-          <div style={{ flex: 2 }}>User</div>
-          <div style={{ flex: 0.6, textAlign: "center" }}>Session</div>
-          <div style={{ flex: 1 }}>Phase</div>
-          <div style={{ flex: 1.2 }}>Date</div>
-          <div style={{ flex: 1 }}>Duration</div>
-          <div style={{ flex: 0.8, textAlign: "right" }}>Turns</div>
-          <div style={{ flex: 1, textAlign: "right" }}>Trust</div>
-          <div style={{ flex: 1, textAlign: "right" }}>Depth</div>
-          <div style={{ flex: 1, textAlign: "right" }}>Readiness</div>
-        </div>
-        {rows.map((r) => (
-          <div key={r.id} style={S.tableRow} onClick={() => onSelectSession(r.id, r.userId)} className="va-row">
-            <div style={{ flex: 2, fontWeight: 500 }}>{r.userName}</div>
-            <div style={{ flex: 0.6, textAlign: "center", color: "#888" }}>#{r.sessionNumber}</div>
-            <div style={{ flex: 1, color: "#C4A08A", fontSize: 12, textTransform: "capitalize" }}>{r.phase || "—"}</div>
-            <div style={{ flex: 1.2, color: "#aaa", fontSize: 12 }}>{formatDate(r.startedAt)}</div>
-            <div style={{ flex: 1, color: "#aaa", fontSize: 12 }}>{r.mins != null ? `${r.mins}m` : "—"}</div>
-            <div style={{ flex: 0.8, textAlign: "right", fontWeight: 500 }}>{r.turns || "—"}</div>
-            <div style={{ flex: 1, textAlign: "right", fontSize: 12, color: "#aaa" }}>{r.trust != null ? `${r.trust}/10` : "—"}</div>
-            <div style={{ flex: 1, textAlign: "right", fontSize: 12, color: "#aaa" }}>{r.depth != null ? `${r.depth}/10` : "—"}</div>
-            <div style={{ flex: 1, textAlign: "right", fontSize: 12, color: "#aaa" }}>{r.readiness != null ? `${r.readiness}/10` : "—"}</div>
-          </div>
-        ))}
-      </div>
-      <style>{`.va-row:hover { background: #262626 !important; }`}</style>
-    </div>
-  );
-}
-
-// --- Invites ---------------------------------------------------------
-
-function Invites({ invites, newInviteName, setNewInviteName, newInviterName, setNewInviterName, createInvite, deleteInvite, reinvite }) {
-  function inviteUrl(inv) {
-    return `https://verona-demo.vercel.app/?invite=${inv.token}`;
-  }
-
-  return (
-    <div style={{ padding: "20px 24px", maxWidth: 900 }}>
-      <div style={S.sectionTitle}>Invites</div>
-
-      <div style={{ marginBottom: 20, maxWidth: 700 }}>
-        <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-          <input
-            value={newInviteName}
-            onChange={(e) => setNewInviteName(e.target.value)}
-            placeholder="Who's being invited (e.g. Tracey)"
-            style={S.input}
-          />
-          <input
-            value={newInviterName}
-            onChange={(e) => setNewInviterName(e.target.value)}
-            placeholder="Who's introducing them (e.g. Sarah)"
-            style={S.input}
-          />
-          <button onClick={createInvite} style={{ ...S.btn, whiteSpace: "nowrap" }}>Create invite</button>
-        </div>
-        <div style={{ fontSize: 11, color: "#888" }}>
-          Angelica uses both names in her opening message. Introducer is optional.
-        </div>
-      </div>
-
-      {invites.length === 0 && <div style={S.empty}>No invites yet</div>}
-      {invites.map((inv) => {
-        const url = inviteUrl(inv);
-        return (
-          <div key={inv.id} style={S.inviteRow}>
-            <div style={{ minWidth: 160 }}>
-              <span style={{ fontWeight: 500 }}>{inv.name}</span>
-              {inv.inviter_name && <span style={{ color: "#888", fontSize: 11 }}> · from {inv.inviter_name}</span>}
-              <div style={{ fontSize: 11, marginTop: 2 }}>
-                <span style={{ color: inv.used_at ? "#7cb87c" : "#888" }}>
-                  {inv.used_at ? `Used ${timeAgo(inv.used_at)}` : "Not used"}
-                </span>
-              </div>
-            </div>
-            <input
-              readOnly
-              value={url}
-              style={{ ...S.input, flex: 1, fontSize: 11 }}
-              onClick={(e) => { e.target.select(); navigator.clipboard.writeText(e.target.value); }}
-            />
-            <button
-              onClick={() => navigator.clipboard.writeText(url)}
-              style={{ ...S.btn, fontSize: 11 }}
-            >Copy</button>
-            {inv.used_at && (
-              <button onClick={() => reinvite(inv.id)} style={{ ...S.btn, fontSize: 11, background: "#2a3a2a", color: "#7cb87c" }}>Reinvite</button>
             )}
-            <button onClick={() => deleteInvite(inv.id)} style={{ ...S.btn, background: "#433", color: "#E24B4A", fontSize: 11 }}>Delete</button>
           </div>
-        );
-      })}
+        </div>
+      </div>
     </div>
   );
 }
 
-// --- Small components ------------------------------------------------
-
-function Stat({ label, value }) {
-  return <div style={S.stat}><div style={S.statValue}>{value}</div><div style={S.statLabel}>{label}</div></div>;
+function ScoreBar({ label, value, max = 10 }) {
+  if (value == null) return null;
+  const pct = Math.max(0, Math.min(100, (Number(value) / max) * 100));
+  return (
+    <div style={{ marginBottom: 8 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+        <span style={{ fontSize: 11 }}>{label}</span>
+        <span style={S.dimMeta}>{value}/{max}</span>
+      </div>
+      <div style={S.barTrack}>
+        <div style={{ ...S.barFill, width: `${pct}%` }} />
+      </div>
+    </div>
+  );
 }
 
-// --- Styles ----------------------------------------------------------
+function SectionList({ title, children }) {
+  const list = Array.isArray(children) ? children.filter(Boolean) : children;
+  if (!list || (Array.isArray(list) && !list.length)) return null;
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div style={S.groupTitle}>{title}</div>
+      <ul style={S.simpleList}>{children}</ul>
+    </div>
+  );
+}
+
+function StatCard({ label, value }) {
+  return (
+    <div style={S.statCard}>
+      <div style={S.statValue}>{value}</div>
+      <div style={S.statLabel}>{label}</div>
+    </div>
+  );
+}
 
 const S = {
-  page: { minHeight: "100vh", background: "#1a1a1a", color: "#e0ddd8", fontFamily: "'DM Sans',sans-serif", fontSize: 13 },
-  topBar: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 24px", borderBottom: "1px solid #333" },
-  title: { fontFamily: "'Cormorant Garamond',serif", fontSize: 28, fontWeight: 500, color: "#C4A08A" },
-  btn: { background: "#E8E4DF", color: "#2C2825", border: "none", borderRadius: 6, padding: "6px 14px", fontSize: 12, cursor: "pointer", fontWeight: 500 },
-  tabBar: { display: "flex", borderBottom: "1px solid #333", padding: "0 24px" },
-  tab: { background: "none", border: "none", borderBottom: "2px solid transparent", color: "#888", cursor: "pointer", fontSize: 13, fontWeight: 500, padding: "10px 18px", marginBottom: -1, fontFamily: "inherit" },
-  tabActive: { color: "#C4A08A", borderBottom: "2px solid #C4A08A" },
-  crumb: { padding: "12px 24px", fontSize: 12, color: "#888", borderBottom: "1px solid #2a2a2a", display: "flex", alignItems: "center", gap: 8 },
-  crumbLink: { color: "#C4A08A", cursor: "pointer" },
-  crumbSep: { color: "#555" },
-  loginBox: { width: 300, margin: "120px auto", textAlign: "center" },
-  input: { width: "100%", padding: "10px 14px", borderRadius: 6, border: "1px solid #444", background: "#222", color: "#e0ddd8", fontSize: 13, outline: "none", boxSizing: "border-box", fontFamily: "inherit" },
-  loadingBox: { padding: 40, textAlign: "center", color: "#888" },
-  errorBox: { padding: 40, textAlign: "center", color: "#E24B4A" },
-  sectionTitle: { fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: "#C4A08A", marginBottom: 12 },
-  statsRow: { display: "flex", gap: 1 },
-  stat: { flex: 1, padding: "16px 12px", textAlign: "center", background: "#1e1e1e", borderRadius: 4, maxWidth: 200 },
-  statValue: { fontSize: 28, fontWeight: 600, color: "#C4A08A", fontFamily: "'Cormorant Garamond',serif" },
-  statLabel: { fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", color: "#888", marginTop: 4 },
-  tableWrap: { display: "flex", flexDirection: "column", background: "#1e1e1e", borderRadius: 6, overflow: "hidden", overflowX: "auto" },
-  tableRow: { display: "flex", padding: "12px 16px", borderBottom: "1px solid #2a2a2a", cursor: "pointer", alignItems: "center", transition: "background 0.1s" },
-  tableHead: { fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em", color: "#888", fontWeight: 500, cursor: "default", background: "#161616" },
-  userHeader: { display: "flex", justifyContent: "space-between", alignItems: "baseline", paddingBottom: 12, borderBottom: "1px solid #2a2a2a" },
-  sessionCard: { background: "#1e1e1e", border: "1px solid #2a2a2a", borderRadius: 8, padding: 14, marginBottom: 10, cursor: "pointer", transition: "background 0.1s, border-color 0.1s" },
-  portraitSection: { marginBottom: 18 },
-  portraitLabel: { fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em", color: "#888", marginBottom: 8, fontWeight: 500 },
-  hypothesisChip: { fontSize: 12, padding: "6px 10px", background: "#222", borderRadius: 4, marginBottom: 5, lineHeight: 1.5 },
-  analysisChip: { fontSize: 12, padding: "8px 10px", background: "#222", borderRadius: 4, marginBottom: 6, lineHeight: 1.5, color: "#d0cdc8" },
-  dimRow: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "3px 0", borderBottom: "1px solid #252525" },
-  empty: { color: "#666", fontStyle: "italic", fontSize: 12, padding: 20, textAlign: "center" },
-  inviteRow: { display: "flex", alignItems: "center", gap: 12, marginBottom: 10, padding: "10px 14px", background: "#222", borderRadius: 6 },
+  page: {
+    minHeight: "100vh",
+    background: "#efdcd5",
+    color: "#3d2722",
+    fontFamily: "'DM Sans', sans-serif",
+    fontSize: 13,
+  },
+  section: { padding: "16px 20px" },
+  topBar: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "16px 20px",
+    borderBottom: "1px solid #d6b9af",
+    background: "linear-gradient(180deg, #f6e5df 0%, #f2dfd8 100%)",
+  },
+  title: {
+    fontFamily: "'Cormorant Garamond', serif",
+    fontSize: 30,
+    color: "#8f4634",
+    letterSpacing: "0.01em",
+  },
+  tabStrip: {
+    display: "flex",
+    gap: 4,
+    padding: "0 20px",
+    borderBottom: "1px solid #d6b9af",
+  },
+  tabBtn: {
+    background: "transparent",
+    border: "none",
+    borderBottom: "2px solid transparent",
+    color: "#8e6a60",
+    fontSize: 12,
+    fontWeight: 600,
+    padding: "10px 14px",
+    cursor: "pointer",
+    textTransform: "uppercase",
+    letterSpacing: "0.06em",
+  },
+  tabBtnActive: {
+    borderBottomColor: "#a95d49",
+    color: "#a95d49",
+  },
+  breadcrumbs: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    padding: "10px 20px",
+    borderBottom: "1px solid #dcc1b7",
+    color: "#9d756a",
+    fontSize: 12,
+  },
+  crumbLink: { color: "#a95d49", cursor: "pointer" },
+  crumbCurrent: { color: "#5a3b34" },
+  crumbSep: { color: "#b78e84" },
+
+  loginCard: {
+    width: 320,
+    margin: "100px auto",
+    background: "#fffdfb",
+    border: "1px solid #e2c9bf",
+    borderRadius: 10,
+    padding: 22,
+    boxShadow: "0 10px 30px rgba(139, 74, 58, 0.08)",
+  },
+
+  card: {
+    background: "#fffdfb",
+    border: "1px solid #e2c9bf",
+    borderRadius: 10,
+    padding: 14,
+    boxShadow: "0 4px 14px rgba(139, 74, 58, 0.05)",
+  },
+  cardTitle: {
+    fontSize: 12,
+    textTransform: "uppercase",
+    letterSpacing: "0.06em",
+    color: "#a35d4c",
+    marginBottom: 10,
+    fontWeight: 600,
+  },
+
+  statsRow: { display: "grid", gap: 10, gridTemplateColumns: "repeat(3, minmax(0, 1fr))" },
+  statCard: {
+    background: "#fffdfb",
+    border: "1px solid #e2c9bf",
+    borderRadius: 10,
+    padding: 14,
+    textAlign: "center",
+    boxShadow: "0 4px 14px rgba(139, 74, 58, 0.05)",
+  },
+  statValue: {
+    fontFamily: "'Cormorant Garamond', serif",
+    fontSize: 34,
+    color: "#9b5443",
+    lineHeight: 1,
+  },
+  statLabel: {
+    marginTop: 6,
+    fontSize: 11,
+    color: "#987268",
+    textTransform: "uppercase",
+    letterSpacing: "0.06em",
+  },
+
+  tableWrap: {
+    display: "flex",
+    flexDirection: "column",
+    border: "1px solid #e4cbc2",
+    borderRadius: 8,
+    overflow: "hidden",
+  },
+  tableRow: {
+    display: "flex",
+    gap: 8,
+    alignItems: "center",
+    padding: "10px 12px",
+    borderBottom: "1px solid #efdad2",
+    cursor: "pointer",
+  },
+  tableHeader: {
+    background: "#f7ece7",
+    fontSize: 10,
+    textTransform: "uppercase",
+    letterSpacing: "0.06em",
+    color: "#9d756a",
+    fontWeight: 600,
+    cursor: "default",
+  },
+
+  headerStrip: {
+    display: "flex",
+    gap: 12,
+    flexWrap: "wrap",
+    padding: 12,
+    background: "#fffdfb",
+    border: "1px solid #e2c9bf",
+    borderRadius: 10,
+  },
+  headerCell: { minWidth: 140 },
+  headerLabel: {
+    fontSize: 10,
+    textTransform: "uppercase",
+    letterSpacing: "0.06em",
+    color: "#9a7469",
+    marginBottom: 4,
+  },
+  headerValue: { fontSize: 13, color: "#5a3c34" },
+
+  innerTabs: { display: "flex", gap: 4, marginTop: 12, borderBottom: "1px solid #dcc2b8" },
+  innerTabBtn: {
+    background: "transparent",
+    border: "none",
+    borderBottom: "2px solid transparent",
+    padding: "8px 12px",
+    color: "#927066",
+    cursor: "pointer",
+    fontWeight: 600,
+    fontSize: 12,
+  },
+  innerTabBtnActive: {
+    borderBottomColor: "#a95d49",
+    color: "#a95d49",
+  },
+
+  quote: {
+    fontFamily: "'Cormorant Garamond', serif",
+    fontStyle: "italic",
+    fontSize: 24,
+    color: "#5f3f37",
+    lineHeight: 1.3,
+  },
+
+  chip: {
+    background: "#fff7f3",
+    border: "1px solid #e6cec5",
+    borderRadius: 6,
+    padding: "8px 10px",
+    marginBottom: 6,
+  },
+
+  groupTitle: {
+    fontSize: 10,
+    textTransform: "uppercase",
+    letterSpacing: "0.06em",
+    color: "#9a7469",
+    marginBottom: 6,
+  },
+  keyValueRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 8,
+    fontSize: 12,
+    padding: "4px 0",
+    borderBottom: "1px solid #f0ddd6",
+  },
+  dimMeta: { color: "#9c766b", fontSize: 11 },
+
+  paneTabs: { display: "flex", gap: 4, marginBottom: 8 },
+  paneTabBtn: {
+    background: "#fff7f3",
+    border: "1px solid #e4c9c0",
+    borderRadius: 6,
+    color: "#947066",
+    fontSize: 11,
+    cursor: "pointer",
+    padding: "6px 8px",
+  },
+  paneTabBtnActive: {
+    borderColor: "#a95d49",
+    color: "#a95d49",
+  },
+
+  messageCard: {
+    borderRadius: 8,
+    padding: 10,
+    border: "1px solid #e4cbc2",
+  },
+  userMessageCard: { background: "#fff8f5", borderLeft: "3px solid #c28673" },
+  assistantMessageCard: { background: "#fdf4ef", borderLeft: "3px solid #a35d4c" },
+  messageMeta: {
+    display: "flex",
+    justifyContent: "space-between",
+    fontSize: 10,
+    color: "#9a756b",
+    textTransform: "uppercase",
+    letterSpacing: "0.05em",
+    marginBottom: 6,
+  },
+  messageBody: { whiteSpace: "pre-wrap", lineHeight: 1.55, color: "#4f362f" },
+
+  noteCard: {
+    background: "#fff7f3",
+    border: "1px solid #e6cec5",
+    borderRadius: 6,
+    padding: 8,
+    marginTop: 6,
+  },
+  noteText: { fontSize: 12, whiteSpace: "pre-wrap", lineHeight: 1.5 },
+  noteMeta: { marginTop: 4, fontSize: 10, color: "#9a756b" },
+
+  inviteRow: {
+    display: "grid",
+    gridTemplateColumns: "170px 1fr auto auto auto",
+    gap: 8,
+    alignItems: "center",
+    padding: "8px 0",
+    borderBottom: "1px solid #efdad2",
+  },
+
+  input: {
+    width: "100%",
+    boxSizing: "border-box",
+    background: "#ffffff",
+    color: "#4f362f",
+    border: "1px solid #e2c9bf",
+    borderRadius: 6,
+    padding: "8px 10px",
+    fontSize: 12,
+    outline: "none",
+    fontFamily: "inherit",
+  },
+
+  primaryBtn: {
+    background: "#a95d49",
+    color: "#fff8f4",
+    border: "none",
+    borderRadius: 6,
+    padding: "8px 12px",
+    fontSize: 12,
+    fontWeight: 600,
+    cursor: "pointer",
+  },
+  secondaryBtn: {
+    background: "#fff7f3",
+    color: "#7e5a4f",
+    border: "1px solid #e1c7be",
+    borderRadius: 6,
+    padding: "7px 10px",
+    fontSize: 12,
+    cursor: "pointer",
+  },
+  secondaryBtnActive: {
+    borderColor: "#a95d49",
+    color: "#a95d49",
+    background: "#fceee8",
+  },
+  dangerBtn: {
+    background: "#fff3f2",
+    color: "#b04f46",
+    border: "1px solid #efc3bf",
+    borderRadius: 6,
+    padding: "7px 10px",
+    fontSize: 12,
+    cursor: "pointer",
+  },
+
+  barTrack: {
+    height: 5,
+    borderRadius: 999,
+    background: "#f1dcd3",
+    overflow: "hidden",
+  },
+  barFill: {
+    height: "100%",
+    background: "#a95d49",
+  },
+
+  simpleList: {
+    margin: 0,
+    paddingLeft: 18,
+    color: "#5a3c34",
+    lineHeight: 1.5,
+    fontSize: 12,
+  },
+
+  mutedText: { fontSize: 11, color: "#9b7468" },
+  warnBar: {
+    margin: "10px 20px 0 20px",
+    padding: "8px 10px",
+    borderRadius: 8,
+    border: "1px solid #e4c2a0",
+    background: "#fff5e8",
+    color: "#9b6a2e",
+    fontSize: 11,
+  },
+  errorText: { color: "#b04f46", fontSize: 12, marginTop: 10 },
 };
