@@ -105,6 +105,7 @@ function buildObserverNotesMarkdown({ user, session, messages, sortedCq, anchorB
         lines.push(`> **${anchor.role === "user" ? name : "Angelica"}:** ${preview}${preview.length === 200 ? "…" : ""}`);
       }
       lines.push("");
+      if (cq.room) lines.push(`**Room:** ${cq.room.split("_").map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join(" ")}`);
       if (cq.alert) lines.push(`**⚠ Alert:** ${cq.alert.replace(/_/g, " ")}`);
       if (cq.delta_summary) lines.push(`**Summary:** ${cq.delta_summary}`);
       lines.push("");
@@ -2289,6 +2290,16 @@ function ObserverFeedPane({ cqRows, messages, userName }) {
   );
 }
 
+function roomLabel(r) {
+  if (!r) return null;
+  return r.split("_").map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join(" ");
+}
+function roomColor(r) {
+  if (r === "therapy" || r === "confessional") return "#6b8e7f"; // receptive — green
+  if (r === "studio" || r === "dating_admin" || r === "matchmaker") return "#a95d49"; // generative — terracotta
+  return "#8a7a6b"; // arrival — taupe
+}
+
 function ObserverFeedCard({ cq, anchor, userName }) {
   const dims = [
     "honesty","trust","safety","investment",
@@ -2314,12 +2325,25 @@ function ObserverFeedCard({ cq, anchor, userName }) {
       color: "#3d2b24",
       lineHeight: 1.5,
     }}>
-      {cq.alert && (
-        <div style={{
-          fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em",
-          color: "#a95d49", marginBottom: 5,
-        }}>
-          ⚠ {cq.alert.replace(/_/g, " ")}
+      {(cq.room || cq.alert) && (
+        <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 5, flexWrap: "wrap" }}>
+          {cq.room && (
+            <span style={{
+              fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em",
+              color: "#fff", background: roomColor(cq.room),
+              padding: "1px 6px", borderRadius: 2,
+            }}>
+              {roomLabel(cq.room)}
+            </span>
+          )}
+          {cq.alert && (
+            <span style={{
+              fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em",
+              color: "#a95d49",
+            }}>
+              ⚠ {cq.alert.replace(/_/g, " ")}
+            </span>
+          )}
         </div>
       )}
 
