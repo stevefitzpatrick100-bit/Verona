@@ -48,7 +48,8 @@ export default function Home() {
 
       const stored = localStorage.getItem("verona-user-id");
       const storedInvite = localStorage.getItem("verona-invite");
-      if (stored && storedInvite) {
+      const storedGuest = localStorage.getItem("verona-guest");
+      if (stored && (storedInvite || storedGuest)) {
         setUserId(stored);
         setChecking(false);
         return;
