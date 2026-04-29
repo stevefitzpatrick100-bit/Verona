@@ -106,6 +106,7 @@ function buildObserverNotesMarkdown({ user, session, messages, sortedCq, anchorB
       }
       lines.push("");
       if (cq.room) lines.push(`**Room:** ${cq.room.split("_").map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join(" ")}`);
+      if (cq.conversation_level) lines.push(`**Level:** ${cq.conversation_level}`);
       if (cq.alert) lines.push(`**⚠ Alert:** ${cq.alert.replace(/_/g, " ")}`);
       if (cq.delta_summary) lines.push(`**Summary:** ${cq.delta_summary}`);
       lines.push("");
@@ -2169,6 +2170,7 @@ function SessionSurface({
               {messages.map((m) => {
                 const isUser = m.role === "user";
                 const cq = cqByAnchorId.get(m.id) || null;
+                const isGuest = (user.invited_by_name || "").toLowerCase().includes("guest");
                 const wordCount = isUser
                   ? (m.content || "").trim().split(/\s+/).filter(Boolean).length
                   : 0;
@@ -2179,7 +2181,7 @@ function SessionSurface({
                         <span>{isUser ? (user.display_name || "User") : "Angelica"}</span>
                         <span>{formatTime(m.created_at)}</span>
                       </div>
-                      {isUser ? (
+                      {isUser && !isGuest ? (
                         <div
                           style={{
                             background: "#fff",
@@ -2325,7 +2327,7 @@ function ObserverFeedCard({ cq, anchor, userName }) {
       color: "#3d2b24",
       lineHeight: 1.5,
     }}>
-      {(cq.room || cq.alert) && (
+      {(cq.room || cq.conversation_level || cq.alert) && (
         <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 5, flexWrap: "wrap" }}>
           {cq.room && (
             <span style={{
@@ -2334,6 +2336,15 @@ function ObserverFeedCard({ cq, anchor, userName }) {
               padding: "1px 6px", borderRadius: 2,
             }}>
               {roomLabel(cq.room)}
+            </span>
+          )}
+          {cq.conversation_level && (
+            <span style={{
+              fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em",
+              color: "#3d2b24", background: "#fff", border: "1px solid #d6c4b3",
+              padding: "1px 6px", borderRadius: 2,
+            }}>
+              L{cq.conversation_level}
             </span>
           )}
           {cq.alert && (
