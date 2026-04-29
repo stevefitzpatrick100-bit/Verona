@@ -5,6 +5,7 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 const TOP_TABS = [
   { id: "dashboard", label: "Dashboard" },
   { id: "users", label: "Users" },
+  { id: "flow", label: "Flow" },
   { id: "invites", label: "Invites" },
   { id: "angelica", label: "Angelica" },
 ];
@@ -744,6 +745,8 @@ export default function AdminPage() {
       )}
 
       {topTab === "angelica" && <AngelicaTab />}
+
+      {topTab === "flow" && <FlowTab data={data} onOpenSession={(uid, sid) => { setSelectedUserId(uid); setSelectedSessionId(sid); setSelectedUserTab("conversations"); setTopTab("users"); }} />}
     </div>
   );
 }
@@ -767,6 +770,8 @@ function Breadcrumbs({
         <span style={S.crumbCurrent}>Invites</span>
       ) : topTab === "angelica" ? (
         <span style={S.crumbCurrent}>Angelica</span>
+      ) : topTab === "flow" ? (
+        <span style={S.crumbCurrent}>Flow</span>
       ) : (
         <>
           <span style={S.crumbLink} onClick={onGoAdoption}>Users</span>
@@ -2307,6 +2312,306 @@ function roomColor(r) {
   if (r === "studio" || r === "dating_admin" || r === "matchmaker") return "#a95d49"; // generative — terracotta
   return "#8a7a6b"; // arrival — taupe
 }
+
+// ----- Flow tab: heat-strip view of every conversation -----------------------
+const FLOW_DIMS = [
+  { key: "trust",           label: "Trust",      group: "rel" },
+  { key: "safety",          label: "Safety",     group: "rel" },
+  { key: "investment",      label: "Investment", group: "rel" },
+  { key: "momentum",        label: "Momentum",   group: "exp" },
+  { key: "progress_belief", label: "Progress",   group: "exp" },
+  { key: "depth_signal",    label: "Depth",      group: "eng" },
+  { key: "return_signal",   label: "Return",     group: "eng" },
+  { key: "agency",          label: "Agency",     group: "dir" },
+];
+
+// 1-10 → cool→warm gradient; null → empty cell.
+function heatColor(v) {
+  if (v == null) return "transparent";
+  const t = Math.max(0, Math.min(1, (Number(v) - 1) / 9));
+  // cream -> sage -> warm gold; crosses through neutral
+  // start #f4f0eb (cream), mid #b8c5b0 (sage), end #c89a4a (warm)
+  if (t < 0.5) {
+    const k = t / 0.5;
+    return mixHex("#f4f0eb", "#b8c5b0", k);
+  }
+  const k = (t - 0.5) / 0.5;
+  return mixHex("#b8c5b0", "#c89a4a", k);
+}
+function mixHex(a, b, t) {
+  const pa = [parseInt(a.slice(1,3),16), parseInt(a.slice(3,5),16), parseInt(a.slice(5,7),16)];
+  const pb = [parseInt(b.slice(1,3),16), parseInt(b.slice(3,5),16), parseInt(b.slice(5,7),16)];
+  const m = pa.map((c,i)=> Math.round(c + (pb[i]-c)*t));
+  return `#${m.map(x=>x.toString(16).padStart(2,"0")).join("")}`;
+}
+
+function FlowTab({ data, onOpenSession }) {
+  const [mode, setMode] = useState("rooms"); // 'rooms' | 'heat'
+  const [showAlerts, setShowAlerts] = useState(true);
+
+  const strips = useMemo(() => {
+    const usersById = new Map((data.users || []).map((u) => [u.id, u]));
+    const sessionsByUser = new Map();
+    for (const s of data.sessions || []) {
+      if (!sessionsByUser.has(s.user_id)) sessionsByUser.set(s.user_id, []);
+      sessionsByUser.get(s.user_id).push(s);
+    }
+    const cqBySession = new Map();
+    for (const c of data.cq || []) {
+      if (!cqBySession.has(c.session_id)) cqBySession.set(c.session_id, []);
+      cqBySession.get(c.session_id).push(c);
+    }
+
+    const out = [];
+    for (const [uid, sessions] of sessionsByUser) {
+      const user = usersById.get(uid);
+      if (!user) continue;
+      sessions.sort((a, b) => new Date(a.started_at) - new Date(b.started_at));
+      for (const s of sessions) {
+        const readings = (cqBySession.get(s.id) || [])
+          .slice()
+          .sort((a, b) => new Date(a.measured_at) - new Date(b.measured_at));
+        if (!readings.length) continue;
+        out.push({ user, session: s, readings });
+      }
+    }
+    // Most recent activity first
+    out.sort((a, b) => {
+      const ax = new Date(a.readings[a.readings.length - 1].measured_at);
+      const bx = new Date(b.readings[b.readings.length - 1].measured_at);
+      return bx - ax;
+    });
+    return out;
+  }, [data]);
+
+  return (
+    <div>
+      <div style={{ ...S.card, marginBottom: 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+          <div>
+            <div style={S.cardTitle}>Flow</div>
+            <div style={{ ...S.mutedText, fontSize: 12 }}>
+              Each strip is one conversation. Each cell is one Observer reading.
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <div style={{ display: "flex", gap: 0, border: "1px solid #d6c4b3", borderRadius: 4, overflow: "hidden" }}>
+              {[
+                { id: "rooms", label: "Rooms" },
+                { id: "heat",  label: "Heat-strip" },
+              ].map((m) => (
+                <button
+                  key={m.id}
+                  onClick={() => setMode(m.id)}
+                  style={{
+                    border: "none",
+                    padding: "5px 10px",
+                    fontSize: 11,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    background: mode === m.id ? "#3d2b24" : "transparent",
+                    color: mode === m.id ? "#f4f0eb" : "#3d2b24",
+                  }}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+            <label style={{ fontSize: 11, color: "#3d2b24", display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
+              <input type="checkbox" checked={showAlerts} onChange={(e) => setShowAlerts(e.target.checked)} />
+              alerts
+            </label>
+          </div>
+        </div>
+
+        {mode === "rooms" ? <FlowLegendRooms /> : <FlowLegendHeat />}
+      </div>
+
+      {!strips.length && (
+        <div style={{ ...S.card, ...S.mutedText, textAlign: "center" }}>
+          No Observer readings yet.
+        </div>
+      )}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {strips.map(({ user, session, readings }) => (
+          <FlowStrip
+            key={session.id}
+            user={user}
+            session={session}
+            readings={readings}
+            mode={mode}
+            showAlerts={showAlerts}
+            onClick={() => onOpenSession(user.id, session.id)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function FlowLegendRooms() {
+  const items = [
+    { label: "Entrance / Lounge", color: "#8a7a6b" },
+    { label: "Therapy / Confessional", color: "#6b8e7f" },
+    { label: "Studio / Dating / Matchmaker", color: "#a95d49" },
+  ];
+  return (
+    <div style={{ display: "flex", gap: 14, fontSize: 11, color: "#6b5a4a", alignItems: "center", flexWrap: "wrap" }}>
+      {items.map((i) => (
+        <span key={i.label} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+          <span style={{ width: 10, height: 10, background: i.color, borderRadius: 2 }} />
+          {i.label}
+        </span>
+      ))}
+      <span style={{ marginLeft: "auto" }}>Cell height = level (L1→L3). Click a strip to open the session.</span>
+    </div>
+  );
+}
+function FlowLegendHeat() {
+  return (
+    <div style={{ display: "flex", gap: 12, fontSize: 11, color: "#6b5a4a", alignItems: "center", flexWrap: "wrap" }}>
+      <span>Rows: {FLOW_DIMS.map((d) => d.label).join(" · ")}</span>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: "auto" }}>
+        <span style={{ width: 10, height: 10, background: heatColor(2), border: "1px solid #d6c4b3" }} />
+        low
+        <span style={{ width: 10, height: 10, background: heatColor(5), border: "1px solid #d6c4b3" }} />
+        mid
+        <span style={{ width: 10, height: 10, background: heatColor(9), border: "1px solid #d6c4b3" }} />
+        high
+      </span>
+    </div>
+  );
+}
+
+function FlowStrip({ user, session, readings, mode, showAlerts, onClick }) {
+  const cellW = 14;
+  const stripH = mode === "heat" ? FLOW_DIMS.length * 11 : 36;
+  const last = readings[readings.length - 1];
+  const turnCount = readings.length;
+
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        ...S.card,
+        padding: "10px 12px",
+        cursor: "pointer",
+        display: "grid",
+        gridTemplateColumns: "180px 1fr 110px",
+        gap: 12,
+        alignItems: "center",
+      }}
+    >
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: "#3d2b24", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {user.display_name || "User"}
+        </div>
+        <div style={{ fontSize: 11, color: "#8a7a6b" }}>
+          Session #{session.session_number ?? "?"} · {turnCount} reading{turnCount === 1 ? "" : "s"}
+        </div>
+      </div>
+
+      <div style={{ overflowX: "auto" }}>
+        <div style={{ display: "flex", height: stripH, alignItems: "stretch", gap: 1 }}>
+          {readings.map((r) => (
+            <FlowCell key={r.id} reading={r} mode={mode} cellW={cellW} stripH={stripH} showAlerts={showAlerts} />
+          ))}
+        </div>
+      </div>
+
+      <div style={{ fontSize: 10, color: "#8a7a6b", textAlign: "right" }}>
+        {last?.room && (
+          <div>
+            <span style={{
+              display: "inline-block",
+              padding: "1px 5px",
+              background: roomColor(last.room),
+              color: "#fff",
+              fontSize: 9,
+              fontWeight: 700,
+              textTransform: "uppercase",
+              letterSpacing: "0.06em",
+              borderRadius: 2,
+            }}>{roomLabel(last.room)}</span>
+          </div>
+        )}
+        <div style={{ marginTop: 3 }}>
+          {new Date(last.measured_at).toLocaleDateString()}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FlowCell({ reading, mode, cellW, stripH, showAlerts }) {
+  const level = reading.conversation_level || 1;
+  const alert = reading.alert;
+  const tip = [
+    `Turn @ ${new Date(reading.measured_at).toLocaleString()}`,
+    reading.room ? `Room: ${roomLabel(reading.room)}` : null,
+    reading.conversation_level ? `Level: ${reading.conversation_level}` : null,
+    alert ? `⚠ ${alert.replace(/_/g, " ")}` : null,
+    reading.delta_summary ? `\n${reading.delta_summary}` : null,
+  ].filter(Boolean).join(" · ");
+
+  if (mode === "rooms") {
+    const fill = roomColor(reading.room);
+    const h = Math.round(stripH * (level / 3));
+    return (
+      <div
+        title={tip}
+        style={{
+          width: cellW,
+          height: stripH,
+          display: "flex",
+          alignItems: "flex-end",
+          position: "relative",
+        }}
+      >
+        <div style={{ width: "100%", height: h, background: fill, opacity: reading.room ? 1 : 0.25 }} />
+        {showAlerts && alert && (
+          <div style={{
+            position: "absolute", top: 2, left: "50%", transform: "translateX(-50%)",
+            width: 4, height: 4, borderRadius: "50%", background: "#a95d49",
+          }} />
+        )}
+      </div>
+    );
+  }
+
+  // heat-strip mode
+  return (
+    <div
+      title={tip}
+      style={{
+        width: cellW,
+        height: stripH,
+        display: "flex",
+        flexDirection: "column",
+        gap: 0,
+        position: "relative",
+      }}
+    >
+      {FLOW_DIMS.map((d) => (
+        <div
+          key={d.key}
+          style={{
+            flex: 1,
+            background: heatColor(reading[d.key]),
+          }}
+        />
+      ))}
+      {showAlerts && alert && (
+        <div style={{
+          position: "absolute", top: 1, right: 1,
+          width: 4, height: 4, borderRadius: "50%", background: "#a95d49",
+        }} />
+      )}
+    </div>
+  );
+}
+// ----- end Flow tab ---------------------------------------------------------
 
 function ObserverFeedCard({ cq, anchor, userName }) {
   const dims = [
