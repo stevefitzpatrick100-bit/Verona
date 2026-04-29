@@ -1,4 +1,5 @@
 import { getSupabaseServer } from "@/lib/supabase";
+import { canWritePortrait } from "@/lib/portrait-gate";
 
 function unauthorized(req) {
   const auth = req.headers.get("authorization");
@@ -121,6 +122,24 @@ export async function POST(req) {
   // ── Combined match-facing portrait ─────────────────────────
   if (kind === "match_portrait") {
     const cfg = DEFAULTS.match_portrait;
+
+    // Gate: refuse to write when the substrate doesn't support a Portrait.
+    // Caller can pass { force: true } to bypass for inspection.
+    const force = !!rawBody.force;
+    const gate = await canWritePortrait(supabase, userId);
+    if (!gate.ready && !force) {
+      const messages = {
+        resolution: "Not ready: there is unmetabolised material in this user. Time in the Therapy room is what's needed before a Portrait can be written.",
+        specificity: "Not ready: the Studio images lack concrete texture. The Partner and Relationship images need imagined-life specificity — morning routines, real scenes — before a Portrait will read as true.",
+        consent: "Not ready: there is receptive material flagged for crossing that hasn't yet been merged into the substrate.",
+      };
+      return Response.json({
+        text: messages[gate.missing] || "Not ready to write a Portrait yet.",
+        question: cfg.title,
+        gate,
+      });
+    }
+
     const instruction = (await loadInstruction(supabase, cfg.promptKey, cfg.instruction))
       .replace(/\{name\}/g, name);
 
@@ -152,7 +171,7 @@ ${rel || "(nothing gathered)"}
 Write the portrait now. Aim for ~300 words. No headings, no bullet lists.`;
 
     const text = await callClaude(prompt, 1200);
-    return Response.json({ text, question: cfg.title });
+    return Response.json({ text, question: cfg.title, gate });
   }
 
   // ── Single-image narratives ────────────────────────────────

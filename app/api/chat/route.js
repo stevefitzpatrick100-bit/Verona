@@ -5,6 +5,7 @@ import { applyPortraitUpdate } from "@/lib/portrait-update";
 import { buildCQCoachingContext } from "@/lib/cq-coaching";
 import { runObserver } from "@/lib/observer";
 import { buildTimeContext } from "@/lib/time-context";
+import { getCurrentRoom, getRoomPromptBlock, formatRoomBlock, isReceptiveRoom } from "@/lib/rooms";
 
 // Cache the active prompt for 60 seconds to avoid a DB hit on every message
 let _promptCache = null;
@@ -69,7 +70,15 @@ export async function POST(req) {
 
     // Build full system prompt with portrait context
     const activePrompt = await getActiveAngelicaPrompt(supabase, userData?.prompt_version_id);
-    let systemPrompt = activePrompt.content + "\n\n## Portrait & Memory\n\n" + portraitContext;
+
+    // Resolve current room from Observer's most recent reading.
+    const currentRoom = await getCurrentRoom(supabase, userId, { isFirstSession: sessionNumber === 1 });
+    const roomBlockData = await getRoomPromptBlock(supabase, currentRoom);
+    const roomBlock = formatRoomBlock(currentRoom, roomBlockData?.content);
+
+    let systemPrompt = activePrompt.content;
+    if (roomBlock) systemPrompt += "\n\n" + roomBlock;
+    systemPrompt += "\n\n## Portrait & Memory\n\n" + portraitContext;
     if (cqCoaching) {
       systemPrompt += "\n\n" + cqCoaching;
     }
@@ -141,10 +150,30 @@ export async function POST(req) {
         .eq("id", sessionId);
     }
 
-    // Run portrait analysis + observer in parallel, both non-blocking
-    runPortraitAnalysis(supabase, userId, sessionNumber, messages, reply).catch(
-      (e) => console.error("Portrait analysis failed:", e)
-    );
+    // Run portrait analysis + observer in parallel, both non-blocking.
+    // In receptive rooms (Therapy / Confessional) we DO NOT extract substrate;
+    // we record the turn into receptive_material and let the user choose later
+    // whether to let it cross. The Observer still runs so room tracking continues.
+    if (isReceptiveRoom(currentRoom)) {
+      if (lastUserMsg && sessionId) {
+        supabase
+          .from("receptive_material")
+          .insert({
+            user_id: userId,
+            session_id: sessionId,
+            room: currentRoom,
+            user_message: lastUserMsg.content,
+            assistant_message: reply,
+          })
+          .then(({ error }) => {
+            if (error) console.error("Receptive insert failed:", error.message);
+          });
+      }
+    } else {
+      runPortraitAnalysis(supabase, userId, sessionNumber, messages, reply).catch(
+        (e) => console.error("Portrait analysis failed:", e)
+      );
+    }
     runObserver(supabase, { userId, sessionId, messages, lastReply: reply }).catch(
       (e) => console.error("Observer failed:", e)
     );
