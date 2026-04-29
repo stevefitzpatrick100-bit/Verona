@@ -2345,6 +2345,62 @@ function mixHex(a, b, t) {
   return `#${m.map(x=>x.toString(16).padStart(2,"0")).join("")}`;
 }
 
+const CQ_ALL_DIMS = [
+  "honesty","trust","safety","investment",
+  "anticipation","momentum","progress_belief","frustration",
+  "return_signal","depth_signal","arrival_state",
+  "orientation","goal_aliveness","agency","dependency_risk",
+];
+
+function csvEscape(v) {
+  if (v == null) return "";
+  const s = String(v);
+  if (/[",\r\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+function exportFlowCsv(strips) {
+  const headers = [
+    "user_id", "user_name", "invited_by",
+    "session_id", "session_number", "session_started_at",
+    "turn_index", "measured_at",
+    "room", "conversation_level", "alert",
+    ...CQ_ALL_DIMS,
+    "narration",
+  ];
+  const rows = [headers.join(",")];
+  for (const { user, session, readings } of strips) {
+    readings.forEach((r, i) => {
+      const cells = [
+        user.id,
+        user.display_name || "",
+        user.invited_by_name || "",
+        session.id,
+        session.session_number ?? "",
+        session.started_at || "",
+        i + 1,
+        r.measured_at || "",
+        r.room || "",
+        r.conversation_level ?? "",
+        r.alert || "",
+        ...CQ_ALL_DIMS.map((k) => r[k] ?? ""),
+        r.delta_summary || "",
+      ].map(csvEscape);
+      rows.push(cells.join(","));
+    });
+  }
+  const blob = new Blob(["\ufeff" + rows.join("\r\n")], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const stamp = new Date().toISOString().slice(0, 10);
+  a.href = url;
+  a.download = `verona-flow-${stamp}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 function FlowTab({ data, onOpenSession }) {
   const [mode, setMode] = useState("rooms"); // 'rooms' | 'heat'
   const [showAlerts, setShowAlerts] = useState(true);
@@ -2421,6 +2477,21 @@ function FlowTab({ data, onOpenSession }) {
               <input type="checkbox" checked={showAlerts} onChange={(e) => setShowAlerts(e.target.checked)} />
               alerts
             </label>
+            <button
+              onClick={() => exportFlowCsv(strips)}
+              style={{
+                border: "1px solid #3d2b24",
+                background: "#3d2b24",
+                color: "#f4f0eb",
+                fontSize: 11,
+                fontWeight: 600,
+                padding: "5px 10px",
+                borderRadius: 4,
+                cursor: "pointer",
+              }}
+            >
+              Export CSV
+            </button>
           </div>
         </div>
 
