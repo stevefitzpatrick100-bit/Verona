@@ -18,6 +18,29 @@ async function selectSafe(queryPromise, tableName, missingTables) {
   throw error;
 }
 
+// Page past Supabase's default 1000-row response cap. `buildQuery` is invoked
+// fresh for every page so we can apply a new .range() each time.
+async function selectAllSafe(supabase, tableName, buildQuery, missingTables, pageSize = 1000) {
+  const out = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await buildQuery(supabase.from(tableName)).range(from, from + pageSize - 1);
+    if (error) {
+      const missingTable = error.code === "42P01" || /does not exist/i.test(error.message || "");
+      if (missingTable) {
+        missingTables.add(tableName);
+        return [];
+      }
+      throw error;
+    }
+    if (!data || !data.length) break;
+    out.push(...data);
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
+  return out;
+}
+
 export async function GET(req) {
   if (unauthorized(req)) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
@@ -57,9 +80,10 @@ export async function GET(req) {
         "sessions",
         missingTables
       ),
-      selectSafe(
-        supabase.from("messages").select("*").order("created_at", { ascending: true }),
+      selectAllSafe(
+        supabase,
         "messages",
+        (q) => q.select("*").order("created_at", { ascending: true }),
         missingTables
       ),
       selectSafe(
@@ -107,9 +131,10 @@ export async function GET(req) {
         "invites",
         missingTables
       ),
-      selectSafe(
-        supabase.from("cq_dimensions").select("*").order("measured_at", { ascending: true }),
+      selectAllSafe(
+        supabase,
         "cq_dimensions",
+        (q) => q.select("*").order("measured_at", { ascending: true }),
         missingTables
       ),
       selectSafe(
