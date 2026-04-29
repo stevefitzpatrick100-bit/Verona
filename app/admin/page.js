@@ -2056,7 +2056,13 @@ function SessionSurface({
 }) {
   const messages = (data.messages || [])
     .filter((m) => m.session_id === session.id)
-    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    .sort((a, b) => {
+      const t = new Date(a.created_at) - new Date(b.created_at);
+      if (t !== 0) return t;
+      // Same timestamp: user message comes before assistant reply.
+      if (a.role !== b.role) return a.role === "user" ? -1 : 1;
+      return (a.id || "").localeCompare(b.id || "");
+    });
 
   const substrate = buildSessionSubstrate(data, user.id, session);
 
