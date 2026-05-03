@@ -136,13 +136,25 @@ export async function POST(req) {
 
     const reply = data.content?.[0]?.text || "...";
 
-    // Store messages in database
+    // Store messages in database. We need the assistant row's id back so we
+    // can attach the system-prompt snapshot to it.
     const lastUserMsg = messages[messages.length - 1];
+    let assistantMessageId = null;
     if (lastUserMsg && sessionId) {
-      await supabase.from("messages").insert([
-        { session_id: sessionId, user_id: userId, role: "user", content: lastUserMsg.content },
-        { session_id: sessionId, user_id: userId, role: "assistant", content: reply },
-      ]);
+      const { data: inserted, error: insertErr } = await supabase
+        .from("messages")
+        .insert([
+          { session_id: sessionId, user_id: userId, role: "user", content: lastUserMsg.content },
+          { session_id: sessionId, user_id: userId, role: "assistant", content: reply },
+        ])
+        .select("id, role, created_at")
+        .order("created_at", { ascending: true });
+      if (insertErr) {
+        console.error("Message insert failed:", insertErr.message);
+      } else {
+        const assistantRow = (inserted || []).find((r) => r.role === "assistant");
+        assistantMessageId = assistantRow?.id || null;
+      }
       // Keep ended_at current so admin shows accurate session duration
       await supabase
         .from("sessions")
@@ -150,8 +162,30 @@ export async function POST(req) {
         .eq("id", sessionId);
     }
 
+    // Snapshot the exact system prompt that produced this assistant turn.
+    // Non-blocking. If the table is missing (migration not run yet) we just
+    // log and move on — runtime keeps working.
+    if (assistantMessageId) {
+      supabase
+        .from("message_prompts")
+        .insert({
+          message_id: assistantMessageId,
+          user_id: userId,
+          session_id: sessionId,
+          system_prompt: systemPrompt,
+          prompt_label: promptLabel,
+          room: currentRoom,
+          model: "claude-sonnet-4-20250514",
+        })
+        .then(({ error }) => {
+          if (error && !/does not exist/i.test(error.message || "")) {
+            console.error("Prompt snapshot insert failed:", error.message);
+          }
+        });
+    }
+
     // Run portrait analysis + observer in parallel, both non-blocking.
-    // In receptive rooms (Therapy / Confessional) we DO NOT extract substrate;
+    // In the receptive room (Therapy) we DO NOT extract substrate;
     // we record the turn into receptive_material and let the user choose later
     // whether to let it cross. The Observer still runs so room tracking continues.
     if (isReceptiveRoom(currentRoom)) {

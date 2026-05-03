@@ -20,7 +20,7 @@ function flag(name) {
 const userQuery = arg("user");
 const room = arg("room");
 const doClear = flag("clear");
-const VALID = ["entrance","lounge","therapy","studio","confessional","dating_admin","matchmaker"];
+const VALID = ["lounge","therapy","studio","dating_admin","matchmaker"];
 
 if (!userQuery || (!doClear && !VALID.includes(room))) {
   console.error("Usage:");

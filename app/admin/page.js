@@ -26,11 +26,11 @@ const SESSION_PANES = [
 const CQ_GROUPS = [
   {
     label: "Relationship quality",
-    keys: ["honesty", "trust", "safety", "investment"],
+    keys: ["honesty", "trust", "investment"],
   },
   {
     label: "Experience quality",
-    keys: ["anticipation", "momentum", "progress_belief", "frustration"],
+    keys: ["momentum", "frustration"],
   },
   {
     label: "Engagement signal",
@@ -38,7 +38,7 @@ const CQ_GROUPS = [
   },
   {
     label: "Direction signal",
-    keys: ["orientation", "goal_aliveness", "agency", "dependency_risk"],
+    keys: ["orientation", "dependency_risk"],
   },
 ];
 
@@ -74,10 +74,10 @@ function niceLabel(key) {
 }
 
 const CQ_DIMS = [
-  "honesty","trust","safety","investment",
-  "anticipation","momentum","progress_belief","frustration",
+  "honesty","trust","investment",
+  "momentum","frustration",
   "return_signal","depth_signal","arrival_state",
-  "orientation","goal_aliveness","agency","dependency_risk",
+  "orientation","dependency_risk",
 ];
 
 function buildObserverNotesMarkdown({ user, session, messages, sortedCq, anchorByCq, observerNotes }) {
@@ -234,11 +234,8 @@ const CQ_NUDGES = {
     low: "Trust is low. Stay in Trust phase. Keep it ordinary, no interpretations.",
     high: "Trust is strong. Permission to go deeper, name patterns.",
   },
-  safety: { low: "Safety is low. Pull back. Be warmer, lighter, no probing." },
   investment: { low: "Investment is thin. Return to what lit them up earlier." },
-  anticipation: { low: "Anticipation is flat. Surprise with specificity, callbacks." },
   momentum: { low: "Momentum dragging. Shorten responses. Lighter touch." },
-  progress_belief: { low: "They don't feel this is going anywhere. Land precisely." },
   frustration: { high: "Frustration rising. Ease off. Change tack. Acknowledge, give space." },
   return_signal: { low: "They may not come back. End on something that lingers." },
   depth_signal: {
@@ -247,8 +244,6 @@ const CQ_NUDGES = {
   },
   arrival_state: { low: "They arrived flat. Match it gently. Don't try to lift them." },
   orientation: { low: "Disoriented. Don't push direction. Let them find the thread." },
-  goal_aliveness: { low: "Goal feels distant. Don't reference matching or outcomes." },
-  agency: { low: "Agency low. Hand control back. Ask what they want to talk about." },
   dependency_risk: { high: "Dependency risk rising. Don't over-nurture. Create distance." },
 };
 const CQ_LOW = 4;
@@ -2059,6 +2054,31 @@ function SessionSurface({
   setMessageNoteDraft,
   addMessageNote,
 }) {
+  const [promptModal, setPromptModal] = useState(null); // { messageId, loading, data, error }
+
+  async function openPromptModal(messageId) {
+    setPromptModal({ messageId, loading: true, data: null, error: null });
+    const pw = sessionStorage.getItem("admin-pw") || "";
+    try {
+      const res = await fetch(`/api/admin/prompt?messageId=${encodeURIComponent(messageId)}`, {
+        headers: { authorization: pw },
+      });
+      if (res.status === 404) {
+        setPromptModal({ messageId, loading: false, data: null, error: "No snapshot for this message. Snapshots only exist for replies generated after the feature shipped." });
+        return;
+      }
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        setPromptModal({ messageId, loading: false, data: null, error: j.error || `HTTP ${res.status}` });
+        return;
+      }
+      const data = await res.json();
+      setPromptModal({ messageId, loading: false, data, error: null });
+    } catch (e) {
+      setPromptModal({ messageId, loading: false, data: null, error: e.message });
+    }
+  }
+
   const messages = (data.messages || [])
     .filter((m) => m.session_id === session.id)
     .sort((a, b) => {
@@ -2187,7 +2207,15 @@ function SessionSurface({
                   : 0;
                 return (
                   <Fragment key={m.id}>
-                    <div style={{ ...S.messageCard, ...(isUser ? S.userMessageCard : S.assistantMessageCard) }}>
+                    <div
+                      style={{
+                        ...S.messageCard,
+                        ...(isUser ? S.userMessageCard : S.assistantMessageCard),
+                        ...(isUser ? null : { cursor: "pointer" }),
+                      }}
+                      onClick={isUser ? undefined : () => openPromptModal(m.id)}
+                      title={isUser ? undefined : "Click to view the system prompt that generated this reply"}
+                    >
                       <div style={S.messageMeta}>
                         <span>{isUser ? (user.display_name || "User") : "Angelica"}</span>
                         <span>{formatTime(m.created_at)}</span>
@@ -2242,6 +2270,85 @@ function SessionSurface({
           setSessionNoteDraft={setSessionNoteDraft}
           addSessionNote={addSessionNote}
         />
+      </div>
+      <PromptSnapshotModal state={promptModal} onClose={() => setPromptModal(null)} />
+    </div>
+  );
+}
+
+function PromptSnapshotModal({ state, onClose }) {
+  if (!state) return null;
+  const { loading, data, error } = state;
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, background: "rgba(40,28,22,0.55)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        zIndex: 1000, padding: 24,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "#fff",
+          border: "1px solid #dcc1b7",
+          borderRadius: 8,
+          width: "min(900px, 100%)",
+          maxHeight: "90vh",
+          display: "flex",
+          flexDirection: "column",
+          boxShadow: "0 12px 40px rgba(0,0,0,0.25)",
+        }}
+      >
+        <div style={{
+          padding: "10px 14px",
+          borderBottom: "1px solid #ead8d0",
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          gap: 12,
+        }}>
+          <div style={{ fontWeight: 600, color: "#5a3e34" }}>System prompt for this reply</div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            {data?.system_prompt && (
+              <button
+                onClick={() => navigator.clipboard?.writeText(data.system_prompt)}
+                style={{
+                  background: "transparent", border: "1px solid #c8a99c", color: "#8e6a60",
+                  borderRadius: 4, padding: "4px 10px", fontSize: 11, cursor: "pointer",
+                }}
+              >Copy</button>
+            )}
+            <button
+              onClick={onClose}
+              style={{
+                background: "#a95d49", border: "1px solid #a95d49", color: "#fff",
+                borderRadius: 4, padding: "4px 10px", fontSize: 11, cursor: "pointer",
+              }}
+            >Close</button>
+          </div>
+        </div>
+        {data && (
+          <div style={{
+            padding: "8px 14px", borderBottom: "1px solid #f1e3dc",
+            display: "flex", gap: 14, fontSize: 11, color: "#6b5a4a", flexWrap: "wrap",
+          }}>
+            <span><b>Prompt:</b> {data.prompt_label || "—"}</span>
+            <span><b>Room:</b> {data.room || "—"}</span>
+            <span><b>Model:</b> {data.model || "—"}</span>
+            <span><b>Captured:</b> {data.created_at ? new Date(data.created_at).toLocaleString() : "—"}</span>
+            <span style={{ marginLeft: "auto" }}><b>{data.system_prompt ? data.system_prompt.length.toLocaleString() : 0}</b> chars</span>
+          </div>
+        )}
+        <div style={{
+          padding: 14, overflow: "auto", flex: 1,
+          fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+          fontSize: 12, lineHeight: 1.5, whiteSpace: "pre-wrap",
+          color: "#3d2c25", background: "#faf6f1",
+        }}>
+          {loading && <div style={{ color: "#8e6a60" }}>Loading…</div>}
+          {error && <div style={{ color: "#a95d49" }}>{error}</div>}
+          {data?.system_prompt}
+        </div>
       </div>
     </div>
   );
@@ -2308,21 +2415,21 @@ function roomLabel(r) {
   return r.split("_").map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join(" ");
 }
 function roomColor(r) {
-  if (r === "therapy" || r === "confessional") return "#6b8e7f"; // receptive — green
+  if (r === "therapy") return "#6b8e7f"; // receptive — green
   if (r === "studio" || r === "dating_admin" || r === "matchmaker") return "#a95d49"; // generative — terracotta
-  return "#8a7a6b"; // arrival — taupe
+  return "#8a7a6b"; // lounge — taupe
 }
 
 // ----- Flow tab: heat-strip view of every conversation -----------------------
 const FLOW_DIMS = [
   { key: "trust",           label: "Trust",      group: "rel" },
-  { key: "safety",          label: "Safety",     group: "rel" },
   { key: "investment",      label: "Investment", group: "rel" },
   { key: "momentum",        label: "Momentum",   group: "exp" },
-  { key: "progress_belief", label: "Progress",   group: "exp" },
+  { key: "frustration",     label: "Frustration",group: "exp" },
   { key: "depth_signal",    label: "Depth",      group: "eng" },
   { key: "return_signal",   label: "Return",     group: "eng" },
-  { key: "agency",          label: "Agency",     group: "dir" },
+  { key: "orientation",     label: "Orientation",group: "dir" },
+  { key: "dependency_risk", label: "Dependency", group: "dir" },
 ];
 
 // 1-10 → cool→warm gradient; null → empty cell.
@@ -2346,10 +2453,10 @@ function mixHex(a, b, t) {
 }
 
 const CQ_ALL_DIMS = [
-  "honesty","trust","safety","investment",
-  "anticipation","momentum","progress_belief","frustration",
+  "honesty","trust","investment",
+  "momentum","frustration",
   "return_signal","depth_signal","arrival_state",
-  "orientation","goal_aliveness","agency","dependency_risk",
+  "orientation","dependency_risk",
 ];
 
 function csvEscape(v) {
@@ -2523,8 +2630,8 @@ function FlowTab({ data, onOpenSession }) {
 
 function FlowLegendRooms() {
   const items = [
-    { label: "Entrance / Lounge", color: "#8a7a6b" },
-    { label: "Therapy / Confessional", color: "#6b8e7f" },
+    { label: "Lounge", color: "#8a7a6b" },
+    { label: "Therapy", color: "#6b8e7f" },
     { label: "Studio / Dating / Matchmaker", color: "#a95d49" },
   ];
   return (
@@ -2686,10 +2793,10 @@ function FlowCell({ reading, mode, cellW, stripH, showAlerts }) {
 
 function ObserverFeedCard({ cq, anchor, userName }) {
   const dims = [
-    "honesty","trust","safety","investment",
-    "anticipation","momentum","progress_belief","frustration",
+    "honesty","trust","investment",
+    "momentum","frustration",
     "return_signal","depth_signal","arrival_state",
-    "orientation","goal_aliveness","agency","dependency_risk",
+    "orientation","dependency_risk",
   ];
   const lowGood = new Set(["frustration","dependency_risk"]);
   // Only flag the most extreme few — concerns or breakthrough highs
@@ -2767,10 +2874,10 @@ function ObserverFeedCard({ cq, anchor, userName }) {
 
 function ObserverInline({ cq }) {
   const dims = [
-    "honesty","trust","safety","investment",
-    "anticipation","momentum","progress_belief","frustration",
+    "honesty","trust","investment",
+    "momentum","frustration",
     "return_signal","depth_signal","arrival_state",
-    "orientation","goal_aliveness","agency","dependency_risk",
+    "orientation","dependency_risk",
   ];
   const lowGood = new Set(["frustration","dependency_risk"]);
   const highlights = dims
@@ -3107,84 +3214,62 @@ const LEVEL_SUBTABS = [
 ];
 
 const ROOM_SUBTABS = [
-  { id: "entrance",     key: "room_entrance",     label: "Entrance" },
   { id: "lounge",       key: "room_lounge",       label: "Lounge" },
   { id: "therapy",      key: "room_therapy",      label: "Therapy" },
   { id: "studio",       key: "room_studio",       label: "Studio" },
-  { id: "confessional", key: "room_confessional", label: "Confessional" },
   { id: "dating_admin", key: "room_dating_admin", label: "Dating Admin" },
   { id: "matchmaker",   key: "room_matchmaker",   label: "Matchmaker" },
 ];
 
 const ROOM_SPECS = {
-  entrance: {
-    kind: "Arrival",
-    question: "Who has just walked in?",
-    description:
-      "The Entrance is where Angelica meets the user for the first time, or for the first time in a while. First impressions are formed here — provisional, light-touch. Nothing is fixed in substrate from the Entrance alone; everything observed here is held until a real conversation in another room confirms or revises it.",
-    behaviour: "Warm, curious, unhurried. Ask what brings them today; do not push.",
-    notAllowed: "Extracting strong claims about who they are. Treating an opening line as substrate.",
-    closing: "Light — a small step into whichever room feels right next.",
-    recording: "Standard. Provisional only.",
-  },
   lounge: {
-    kind: "Arrival",
-    question: "What does she want from a quiet conversation?",
+    kind: "Arrival / Receptive-light",
+    question: "How is she actually doing right now?",
     description:
-      "The Lounge is where the user goes when they don't want to do work. Nothing is built here, by design. Angelica is companionable, warm, present. The Lounge produces no substrate — it produces continuity of relationship.",
-    behaviour: "Easy presence. Match their energy. Keep it small.",
-    notAllowed: "Steering toward Studio work. Reading depth into casual remarks.",
-    closing: "Stay open. Do not push toward another room.",
-    recording: "Standard. No substrate writes from the Lounge.",
+      "The Lounge is where every session begins — the heartbeat of Verona, and the entrance for new users. Light contact before anything else. Sometimes the Lounge is the whole session, and that's a good session.",
+    behaviour: "Present, warm, dryly observant. Remember last time, but don't lead with it. The opening question — 'What's your week actually been like?' — lives here.",
+    notAllowed: "Pulling them into work they didn't ask for. Reading depth into casual remarks. Therapy or Studio moves before they're invited.",
+    closing: "Stay open. If a thread of real interest surfaces and they lean in, that's the natural drift to the Studio.",
+    recording: "Standard. Produces continuity of relationship, not substrate.",
   },
   therapy: {
     kind: "Receptive",
     question: "What is unmetabolised that needs to be heard?",
     description:
-      "The Therapy room is where the user brings something unmetabolised — grief, an unprocessed past, a fear that has been there a while. Angelica's job is to listen, not to build. Material from this room is RECEPTIVE: it is held, not extracted, and only crosses into the user's substrate with explicit consent.",
+      "The Therapy room is the receptive room — where the user brings something unmetabolised (grief, an unprocessed past, a fear that has been there a while). Angelica's job is to listen, not to build. Material from this room is RECEPTIVE: it is held, not extracted, and only crosses into substrate with explicit consent. A medicinal detour, not a destination.",
     behaviour: "Quiet. Slow. Do not move first. Hold rather than analyse. When you speak, name what you heard, gently, without diagnosis.",
-    notAllowed: "Coaching, building, producing. Treating what is said as substrate. Pushing toward integration before they have been heard. Suggesting other rooms unless invited.",
-    closing: "Do not close on a forward-looking question. Hold rather than advance: \"Thank you for trusting me with this. We don't need to talk about anyone else for a while.\"",
+    notAllowed: "Coaching, building, producing. Treating what is said as substrate. Pushing toward integration before they have been heard. Dwelling past ~10 consecutive turns.",
+    closing: "When the moment has settled, gently bring them back toward the Studio. The transition has three beats — observation, invitation, anchor: 'This seems to be something that's really on your mind. Would you like to take a few minutes and talk it through?'",
     recording: "Receptive. Writes to receptive_material, not substrate. Consent required to cross.",
   },
   studio: {
-    kind: "Generative",
+    kind: "Generative — home",
     question: "What recognition or image are we shaping together?",
     description:
-      "The Studio is where the user does the work of seeing themselves and imagining the partner and life they want. Recognitions are surfaced. Partner image and Relationship image are shaped here. Specificity matters — concrete scenes, not abstractions.",
-    behaviour: "Curious, generative, willing to push gently for texture. Reflect, ask for the concrete, build images alongside.",
-    notAllowed: "Vague affirmations in place of specificity. Producing horoscope prose.",
-    closing: "Forward-looking is fine here. Name what was learned. Invite the next layer.",
+      "The Studio is home. The generative core. Where the user is seen, helped, and shaped — partner image, relationship image, the imagined morning. Three modes (tones of the same conversation): the flattering mirror, the life coach, the dating coach. Specificity makes a person; generality makes a horoscope.",
+    behaviour: "Generous and accurate. Curious, generative, willing to push gently for texture. Build images alongside, not at them. When they say 'kind', ask what kindness looks like on a Tuesday morning. Have views, and use them.",
+    notAllowed: "Sycophancy. Vague generality. Dwelling. Doing Therapy work — if the user arrives carrying something unmetabolised, walk them to Therapy first.",
+    closing: "Forward-looking is fine. Name what was learned. Invite the next layer. They should leave feeling their picture got clearer and that *they* are more capable.",
     recording: "Standard. Writes to portrait / partner / relationship dimensions.",
-  },
-  confessional: {
-    kind: "Receptive",
-    question: "What single true sentence wants to be said?",
-    description:
-      "The Confessional is for the truths that are hard to say and want only to be said — once, plainly. Single sentences. Angelica receives them. They do not become substrate unless the user explicitly says they should.",
-    behaviour: "Receive, do not analyse. Acknowledge cleanly. Do not unpack.",
-    notAllowed: "Probing. Extracting. Linking the truth to a dimension.",
-    closing: "Hold. \"I've heard it. It stays here unless you want it to go further.\"",
-    recording: "Receptive. Writes to receptive_material. Consent required to cross.",
   },
   dating_admin: {
     kind: "Generative (practical)",
     question: "What does a good evening look like, concretely?",
     description:
-      "The Dating Admin room is the practical workshop for evenings — logistics, plans, what would actually be enjoyed, what would not. Concrete, light, useful.",
-    behaviour: "Practical, warm, specific. Sketch evenings together. Test for what fits her real life.",
-    notAllowed: "Drifting into Studio territory. Treating logistics as identity work.",
+      "The Dating Admin room is the practical workshop for evenings — logistics, plans, what would actually be enjoyed, what would not. The promise: give Angelica a few free dates, she handles the rest. Each completed evening produces signal that flows back into the Studio.",
+    behaviour: "Practical, energetic, often funny. Sketch evenings together. Test for what fits her real life — her time, her energy, her tastes.",
+    notAllowed: "Drifting into Studio territory. Treating logistics as identity work. Adding weight. Making the user feel processed.",
     closing: "Forward-looking. Land a concrete next step if there is one.",
     recording: "Standard. Writes to evenings / preferences as appropriate.",
   },
   matchmaker: {
-    kind: "Generative (practical)",
+    kind: "Generative (destination)",
     question: "Is there a match worth introducing?",
     description:
-      "The Matchmaker room is where introductions happen. It is only meaningful when the Portrait gate is clear — resolution, specificity, and consent are all present. Until then the room exists but has nothing in it.",
-    behaviour: "Specific, careful, honest about why a match is being suggested.",
-    notAllowed: "Suggesting matches before the Portrait is ready. Inventing fit.",
-    closing: "Concrete next step or honest \"not yet\".",
+      "The Matchmaker room is the destination — where introductions happen. Only meaningful when the Portrait gate is clear (resolution, specificity, consent). Before any matches exist, the Portrait is visible here — 'this is the letter I would send' — making it a working room before it becomes a destination.",
+    behaviour: "Direct, thoughtful, candid. Tell the user who you're looking at, what you're seeing, what you're thinking. Do not over-promise.",
+    notAllowed: "Hype. Mystery. Volume for its own sake. Suggesting matches before the Portrait is ready. Inventing fit.",
+    closing: "Concrete next step or honest 'not yet'. Show only the people who pass your own bar — that bar is the whole product.",
     recording: "Standard. Writes introductions only.",
   },
 };
@@ -3236,7 +3321,7 @@ function LevelsTab() {
 }
 
 function RoomsTab() {
-  const [sub, setSub] = useState("entrance");
+  const [sub, setSub] = useState("lounge");
   const item = ROOM_SUBTABS.find((t) => t.id === sub);
   const spec = ROOM_SPECS[sub];
   return (
