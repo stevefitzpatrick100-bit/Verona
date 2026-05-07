@@ -1096,6 +1096,86 @@ function UserSurface({ data, user, selectedUserTab, setSelectedUserTab, onOpenSe
   );
 }
 
+function exportAllConversationsTxt(data) {
+  const usersById = new Map((data.users || []).map((u) => [u.id, u]));
+  const sessions = (data.sessions || []).slice().sort((a, b) => {
+    const u = (usersById.get(a.user_id)?.display_name || "").localeCompare(
+      usersById.get(b.user_id)?.display_name || ""
+    );
+    if (u !== 0) return u;
+    if (a.user_id !== b.user_id) return a.user_id < b.user_id ? -1 : 1;
+    return (a.session_number ?? 0) - (b.session_number ?? 0);
+  });
+
+  const messagesBySession = new Map();
+  for (const m of data.messages || []) {
+    if (!messagesBySession.has(m.session_id)) messagesBySession.set(m.session_id, []);
+    messagesBySession.get(m.session_id).push(m);
+  }
+  for (const arr of messagesBySession.values()) {
+    arr.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  }
+
+  const fmtTs = (iso) => {
+    if (!iso) return "";
+    try { return new Date(iso).toISOString().replace("T", " ").slice(0, 19) + " UTC"; }
+    catch { return iso; }
+  };
+
+  const lines = [];
+  lines.push(`Verona — All conversations export`);
+  lines.push(`Generated: ${new Date().toISOString()}`);
+  lines.push(`Users: ${(data.users || []).length} · Sessions: ${sessions.length} · Messages: ${(data.messages || []).length}`);
+  lines.push("");
+  lines.push("Each conversation begins with a header line and is separated by a row of '=' characters.");
+  lines.push("Within a conversation, each turn is prefixed with [User] or [Angelica] and a timestamp.");
+  lines.push("");
+
+  let included = 0;
+  for (const s of sessions) {
+    const msgs = messagesBySession.get(s.id) || [];
+    if (!msgs.length) continue;
+    const user = usersById.get(s.user_id);
+    const name = user?.display_name || user?.id?.slice(0, 8) || "Unknown";
+    const inviter = user?.invited_by_name ? ` (invited by ${user.invited_by_name})` : "";
+
+    lines.push("=".repeat(80));
+    lines.push(`CONVERSATION ${included + 1}`);
+    lines.push(`User: ${name}${inviter}`);
+    lines.push(`User ID: ${s.user_id}`);
+    lines.push(`Session: #${s.session_number ?? "?"}  (id: ${s.id})`);
+    lines.push(`Started: ${fmtTs(s.started_at)}`);
+    if (s.ended_at) lines.push(`Ended:   ${fmtTs(s.ended_at)}`);
+    lines.push(`Stage ${s.stage ?? "-"} · Level ${s.level ?? "-"} · ${msgs.length} turns`);
+    lines.push("=".repeat(80));
+    lines.push("");
+
+    for (const m of msgs) {
+      const who = m.role === "user" ? "[User]" : m.role === "assistant" ? "[Angelica]" : `[${m.role}]`;
+      lines.push(`${who} ${fmtTs(m.created_at)}`);
+      lines.push((m.content || "").trim());
+      lines.push("");
+    }
+    lines.push("");
+    included++;
+  }
+
+  if (!included) {
+    lines.push("(No conversations with messages were found.)");
+  }
+
+  const blob = new Blob([lines.join("\r\n")], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const stamp = new Date().toISOString().slice(0, 10);
+  a.href = url;
+  a.download = `verona-conversations-${stamp}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 function AllConversationsView({ data, onOpenSession }) {
   const rows = useMemo(() => {
     const usersById = new Map((data.users || []).map((u) => [u.id, u]));
@@ -1130,7 +1210,25 @@ function AllConversationsView({ data, onOpenSession }) {
 
   return (
     <div style={{ ...S.card, marginTop: 12 }}>
-      <div style={S.cardTitle}>All conversations</div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        <div style={S.cardTitle}>All conversations</div>
+        <button
+          onClick={() => exportAllConversationsTxt(data)}
+          style={{
+            border: "1px solid #3d2b24",
+            background: "#3d2b24",
+            color: "#f4f0eb",
+            fontSize: 11,
+            fontWeight: 600,
+            padding: "5px 10px",
+            borderRadius: 4,
+            cursor: "pointer",
+          }}
+          title="Download every conversation as a single .txt file"
+        >
+          Download all (TXT)
+        </button>
+      </div>
       <div style={S.tableWrap}>
         <div style={{ ...S.tableRow, ...S.tableHeader }}>
           <div style={{ flex: 1.5 }}>User</div>
