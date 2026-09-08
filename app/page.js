@@ -1,6 +1,8 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
 
+const MAX_INPUT_HEIGHT = 112; // ~4 lines before the box starts scrolling internally
+
 export default function Home() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
@@ -15,6 +17,14 @@ export default function Home() {
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const endRef = useRef(null);
   const inputRef = useRef(null);
+
+  // Grow the message box with its content, up to ~4 lines, then scroll.
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, MAX_INPUT_HEIGHT) + "px";
+  }, [input]);
 
   // Validate invite token on mount
   useEffect(() => {
@@ -404,7 +414,7 @@ export default function Home() {
       {/* Input bar — shown whenever user is known and history has loaded */}
       {userId && historyLoaded && !showSplash && (
         <div style={S.bar}>
-          <input
+          <textarea
             ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -415,8 +425,8 @@ export default function Home() {
               }
             }}
             placeholder="Say something..."
+            rows={1}
             style={S.inp}
-            disabled={loading}
           />
           <button
             onClick={() => send(input)}
@@ -447,12 +457,12 @@ const S = {
   dateLabel: { fontSize: 11, color: "#9B9590", background: "#F0ECE8", borderRadius: 10, padding: "3px 12px", letterSpacing: "0.04em" },
   uRow: { display: "flex", justifyContent: "flex-end" },
   aRow: { display: "flex", justifyContent: "flex-start" },
-  uBub: { background: "#2C2825", color: "#FAF8F5", padding: "12px 16px", borderRadius: "20px 20px 4px 20px", maxWidth: "80%", fontSize: 15, lineHeight: 1.55 },
+  uBub: { background: "#2C2825", color: "#FAF8F5", padding: "12px 16px", borderRadius: "20px 20px 4px 20px", maxWidth: "80%", fontSize: 15, lineHeight: 1.55, whiteSpace: "pre-wrap" },
   aBub: { padding: "12px 4px", maxWidth: "85%", fontSize: 17, lineHeight: 1.65, fontFamily: "'Cormorant Garamond',serif", whiteSpace: "pre-wrap" },
   wait: { padding: "12px 4px", fontSize: 22, color: "#C4A08A", fontFamily: "'Cormorant Garamond',serif", letterSpacing: 4 },
-  bar: { display: "flex", alignItems: "center", padding: "12px 16px", paddingBottom: "max(16px, env(safe-area-inset-bottom))", gap: 10, borderTop: "1px solid #E8E4DF" },
-  inp: { flex: 1, border: "1px solid #E8E4DF", borderRadius: 24, padding: "12px 18px", fontSize: 16, fontFamily: "'DM Sans',sans-serif", outline: "none", background: "#fff", color: "#2C2825" },
-  snd: { background: "#2C2825", border: "none", borderRadius: "50%", width: 40, height: 40, cursor: "pointer", fontSize: 18, color: "#FAF8F5", display: "flex", alignItems: "center", justifyContent: "center" },
+  bar: { display: "flex", alignItems: "flex-end", padding: "12px 16px", paddingBottom: "max(16px, env(safe-area-inset-bottom))", gap: 10, borderTop: "1px solid #E8E4DF" },
+  inp: { flex: 1, border: "1px solid #E8E4DF", borderRadius: 20, padding: "12px 18px", fontSize: 16, lineHeight: 1.4, fontFamily: "'DM Sans',sans-serif", outline: "none", background: "#fff", color: "#2C2825", resize: "none", maxHeight: 112, overflowY: "auto" },
+  snd: { background: "#2C2825", border: "none", borderRadius: "50%", width: 40, height: 40, flexShrink: 0, cursor: "pointer", fontSize: 18, color: "#FAF8F5", display: "flex", alignItems: "center", justifyContent: "center" },
   panel: { width: 320, borderLeft: "1px solid #E8E4DF", overflowY: "auto", padding: "16px", background: "#fff", flexShrink: 0 },
   panelTitle: { fontFamily: "'Cormorant Garamond',serif", fontSize: 20, fontWeight: 500, marginBottom: 16 },
   section: { marginBottom: 16, paddingTop: 12, borderTop: "1px solid #F0ECE8" },
