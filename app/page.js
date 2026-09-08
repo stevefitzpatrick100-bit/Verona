@@ -255,7 +255,6 @@ export default function Home() {
       <div style={S.wrap}>
         <div style={S.splash}>
           <div style={S.logo}>Verona</div>
-          <div style={S.tag}>Find love worth dying for.</div>
         </div>
       </div>
     );
@@ -267,7 +266,6 @@ export default function Home() {
         <a href="/admin" style={{ position: "fixed", bottom: 16, left: 16, fontSize: 12, color: "#C4A08A", opacity: 0.6, textDecoration: "none", letterSpacing: 1, zIndex: 100, padding: "8px 12px" }}>admin</a>
         <div style={S.splash}>
           <div style={S.logo}>Verona</div>
-          <div style={S.tag}>Find love worth dying for.</div>
           <div style={{ marginTop: 32, fontSize: 15, color: "#9B9590", maxWidth: 360, lineHeight: 1.6 }}>
             Angelica is available by invitation only. If someone shared a link with you, make sure you&apos;re using the full URL they sent.
           </div>
@@ -303,7 +301,6 @@ export default function Home() {
           {showSplash && (
             <div style={S.splash}>
               <div style={S.logo}>Verona</div>
-              <div style={S.tag}>Find love worth dying for.</div>
               <button onClick={beginConversation} style={S.go} disabled={loading}>
                 {loading ? "..." : "Start talking to Angelica"}
               </button>

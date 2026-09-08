@@ -1,6 +1,5 @@
 export const metadata = {
   title: "Verona — Angelica",
-  description: "Find love worth dying for.",
 };
 
 export default function RootLayout({ children }) {
