@@ -121,8 +121,9 @@ export async function POST(req) {
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-5",
         max_tokens: 1000,
+        thinking: { type: "disabled" },
         system: systemPrompt,
         messages: messages.slice(-30),
       }),
@@ -175,7 +176,7 @@ export async function POST(req) {
           system_prompt: systemPrompt,
           prompt_label: promptLabel,
           room: currentRoom,
-          model: "claude-sonnet-4-20250514",
+          model: "claude-sonnet-5",
         })
         .then(({ error }) => {
           if (error && !/does not exist/i.test(error.message || "")) {
@@ -237,8 +238,9 @@ async function runPortraitAnalysis(supabase, userId, sessionNumber, messages, la
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-5",
       max_tokens: 2000,
+      thinking: { type: "disabled" },
       messages: [
         {
           role: "user",
