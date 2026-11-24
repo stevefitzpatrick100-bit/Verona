@@ -1,9 +1,10 @@
+import { isAdminPassword } from "@/lib/adminAuth";
 import { getSupabaseServer } from "@/lib/supabase";
 import { canWritePortrait } from "@/lib/portrait-gate";
 
 function unauthorized(req) {
   const auth = req.headers.get("authorization");
-  return auth !== process.env.ADMIN_PASSWORD;
+  return !isAdminPassword(auth);
 }
 
 // Default instructions — used when no active version exists in prompt_versions.

@@ -1,8 +1,9 @@
+import { isAdminPassword } from "@/lib/adminAuth";
 import { getSupabaseServer } from "@/lib/supabase";
 import { ANGELICA_SYSTEM_PROMPT } from "@/lib/prompts";
 
 function authCheck(req) {
-  return req.headers.get("authorization") === process.env.ADMIN_PASSWORD;
+  return isAdminPassword(req.headers.get("authorization"));
 }
 
 // GET — list all versions for a prompt_key (default: angelica)

@@ -1,8 +1,9 @@
+import { isAdminPassword } from "@/lib/adminAuth";
 import { getSupabaseServer } from "@/lib/supabase";
 
 function unauthorized(req) {
   const auth = req.headers.get("authorization");
-  return auth !== process.env.ADMIN_PASSWORD;
+  return !isAdminPassword(auth);
 }
 
 async function selectSafe(queryPromise, tableName, missingTables) {

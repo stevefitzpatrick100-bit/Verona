@@ -1,9 +1,10 @@
+import { isAdminPassword } from "@/lib/adminAuth";
 import { getSupabaseServer } from "@/lib/supabase";
 
 // GET: list all invites
 export async function GET(req) {
   const auth = req.headers.get("authorization");
-  if (auth !== process.env.ADMIN_PASSWORD) {
+  if (!isAdminPassword(auth)) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -23,7 +24,7 @@ export async function GET(req) {
 //   inviter_name = who is introducing them (e.g. "Sarah")
 export async function POST(req) {
   const auth = req.headers.get("authorization");
-  if (auth !== process.env.ADMIN_PASSWORD) {
+  if (!isAdminPassword(auth)) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -58,7 +59,7 @@ export async function POST(req) {
 // Body: { id } (the id of the used invite to reinvite)
 export async function PATCH(req) {
   const auth = req.headers.get("authorization");
-  if (auth !== process.env.ADMIN_PASSWORD) {
+  if (!isAdminPassword(auth)) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -104,7 +105,7 @@ export async function PATCH(req) {
 // DELETE: remove an invite
 export async function DELETE(req) {
   const auth = req.headers.get("authorization");
-  if (auth !== process.env.ADMIN_PASSWORD) {
+  if (!isAdminPassword(auth)) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
