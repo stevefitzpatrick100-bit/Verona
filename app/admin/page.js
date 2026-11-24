@@ -364,6 +364,31 @@ export default function AdminPage() {
     fetchData();
   }
 
+  async function deleteUser(user) {
+    const name = user.display_name || user.id.slice(0, 8);
+    const typed = prompt(
+      `This permanently deletes ${name} and all their history: conversations, portrait, scores and notes. ` +
+        `Their invite link will work again for a fresh start.\n\nType DELETE to confirm.`
+    );
+    if (typed !== "DELETE") return;
+    const pw = sessionStorage.getItem("admin-pw");
+    const res = await fetch("/api/admin", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json", authorization: pw },
+      body: JSON.stringify({ userId: user.id }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || json.error) {
+      alert(`Couldn't delete ${name}: ${json.error || res.statusText}`);
+      return;
+    }
+    setSelectedSessionId(null);
+    setSelectedUserId(null);
+    setSelectedUserTab("overview");
+    setConversationsRootView("adoption");
+    fetchData();
+  }
+
   async function reinvite(id) {
     const pw = sessionStorage.getItem("admin-pw");
     await fetch("/api/invite", {
@@ -719,6 +744,7 @@ export default function AdminPage() {
             setSelectedUserTab("overview");
           }}
           onGoAllConversations={openAllConversations}
+          onDeleteUser={deleteUser}
         />
       )}
 
@@ -1055,7 +1081,7 @@ function AdoptionView({ data, onSelectUser }) {
   );
 }
 
-function UserSurface({ data, user, selectedUserTab, setSelectedUserTab, onOpenSession, onGoAdoption, onGoAllConversations }) {
+function UserSurface({ data, user, selectedUserTab, setSelectedUserTab, onOpenSession, onGoAdoption, onGoAllConversations, onDeleteUser }) {
   const sessions = useMemo(() => {
     return (data.sessions || [])
       .filter((s) => s.user_id === user.id)
@@ -1070,7 +1096,13 @@ function UserSurface({ data, user, selectedUserTab, setSelectedUserTab, onOpenSe
 
   return (
     <div style={S.section}>
-      <UserHeaderStrip user={user} sessions={sessions} totalMins={totalMins} latestSession={latestSession} />
+      <UserHeaderStrip
+        user={user}
+        sessions={sessions}
+        totalMins={totalMins}
+        latestSession={latestSession}
+        onDelete={onDeleteUser ? () => onDeleteUser(user) : null}
+      />
 
       <div style={S.innerTabs}>
         {USER_TABS.map((t) => (
@@ -1262,7 +1294,7 @@ function AllConversationsView({ data, onOpenSession }) {
   );
 }
 
-function UserHeaderStrip({ user, sessions, totalMins, latestSession }) {
+function UserHeaderStrip({ user, sessions, totalMins, latestSession, onDelete }) {
   return (
     <div style={S.headerStrip}>
       <div style={S.headerCell}>
@@ -1296,6 +1328,11 @@ function UserHeaderStrip({ user, sessions, totalMins, latestSession }) {
           {user.invited_by_name ? ` - ${user.invited_by_name}` : ""}
         </div>
       </div>
+      {onDelete && (
+        <div style={{ marginLeft: "auto", alignSelf: "center" }}>
+          <button onClick={onDelete} style={S.dangerBtn}>Delete user &amp; history</button>
+        </div>
+      )}
     </div>
   );
 }
